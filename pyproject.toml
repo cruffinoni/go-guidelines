@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "go-guidelines-lint"
+version = "0.1.0"
+description = "CLI linter for Go coding guideline violations"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+  { name = "Go Guidelines Team" }
+]
+dependencies = [
+  "click>=8.1.7",
+  "pathspec>=0.12.1",
+  "rich>=13.7.1"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.5"
+]
+
+[project.scripts]
+gg-lint = "go_guidelines_lint.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.go_guidelines]
+guidelines_path = "~/guidelines/go/GO_BEST_PRACTICES.md"
+enable_comments_guidelines = true
+target = "./..."
+format = "text"
+fail_on = "error"
+max_line_length = 120
+max_workers = 6
+include = ["**/*.go"]
+exclude = ["**/vendor/**", "**/.git/**", "**/*_generated.go"]
+
+[tool.go_guidelines.logging]
+level = "INFO"
+format = "text"
+
+[tool.go_guidelines.rules]
+enable = []
+disable = ["GBP010", "GBP012", "GBP015"]
