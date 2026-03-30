@@ -58,6 +58,7 @@ _NIL_CHECK_RE = re.compile(r'if\s+(?:([A-Za-z_]\w*)\s*==\s*nil|nil\s*==\s*([A-Za
 _SKIPPED_NIL_IDENTS = {"err", "ok"}
 _FUNC_SIGNATURE_RE = re.compile(r"func\s*(\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\((.*?)\)\s*(.*)", re.DOTALL)
 _DIRECT_CALL_RE = re.compile(r"(?<!\.)\b([A-Za-z_]\w*)\s*\(")
+_CHANNEL_RANGE_RE = re.compile(r'\bfor\b.+\brange\b.+<-|<-.+\brange\b')
 _DEFER_CLOSE_RE = re.compile(r'defer\s+(\w+)\.Close\(\)')
 _ASSIGN_ERR_RE = re.compile(r'\b(\w+)\s*,\s*err\s*:=')
 _ERR_CHECK_RE = re.compile(r'if\s+err\s*!=\s*nil')
@@ -587,7 +588,7 @@ def _detect_rule_14(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
     findings: list[Finding] = []
     for func in ctx.funcs:
         body = func.body
-        if "for" in body and "range" in body and "<-" in body and "ctx.Done()" not in body:
+        if _CHANNEL_RANGE_RE.search(body) and "ctx.Done()" not in body:
             findings.append(
                 make_finding(
                     meta,

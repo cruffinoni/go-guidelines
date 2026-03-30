@@ -1136,6 +1136,37 @@ func Run(err error) {
     assert "GBP008" not in rule_ids
 
 
+def test_rule_014_does_not_fire_for_unrelated_range_and_channel(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "pipeline.go").write_text(
+        """
+package sample
+
+func Process(items []string, out chan<- string) {
+    for _, item := range items {
+        _ = item
+    }
+    out <- "done"
+    close(out)
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP014"]
+
+    result = run_scan(config)
+    pipeline_findings = [
+        f for f in result.findings
+        if f.rule_id == "GBP014" and "Pipeline" in f.message
+    ]
+
+    assert pipeline_findings == [], f"Expected no pipeline finding, got: {pipeline_findings}"
+
+
 def test_rule_005_waitgroup_without_goroutines_does_not_fire(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "wg.go").write_text(
