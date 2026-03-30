@@ -54,7 +54,8 @@ _FREE_FUNC_PTR_PARAM_RE = re.compile(
     r'func\s+([A-Za-z_]\w*)\s*\(\s*([A-Za-z_]\w*)\s+\*([A-Z][A-Za-z0-9_]*)\s*,',
     re.MULTILINE,
 )
-_NIL_CHECK_RE = re.compile(r'if\s+(?:[A-Za-z_]\w*\s*==\s*nil|nil\s*==\s*[A-Za-z_]\w*)')
+_NIL_CHECK_RE = re.compile(r'if\s+(?:([A-Za-z_]\w*)\s*==\s*nil|nil\s*==\s*([A-Za-z_]\w*))')
+_SKIPPED_NIL_IDENTS = {"err", "ok"}
 _FUNC_SIGNATURE_RE = re.compile(r"func\s*(\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\((.*?)\)\s*(.*)", re.DOTALL)
 _DIRECT_CALL_RE = re.compile(r"(?<!\.)\b([A-Za-z_]\w*)\s*\(")
 
@@ -742,6 +743,9 @@ def _detect_rule_19(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
         if not func.name.startswith("New"):
             continue
         for match in _NIL_CHECK_RE.finditer(func.body):
+            ident = match.group(1) or match.group(2) or ""
+            if ident in _SKIPPED_NIL_IDENTS or ident.endswith("Err"):
+                continue
             findings.append(
                 make_finding(
                     meta,

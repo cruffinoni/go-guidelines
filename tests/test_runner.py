@@ -948,6 +948,38 @@ import (
     assert any("Dot-import found in import block" in f.message for f in gbp001)
 
 
+def test_rule_019_does_not_flag_err_nil_check_in_constructor(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "ctor.go").write_text(
+        """
+package sample
+
+type Foo struct{}
+
+func NewFoo() (*Foo, error) {
+    f, err := build()
+    if err == nil {
+        return f, nil
+    }
+    return nil, err
+}
+
+func build() (*Foo, error) { return &Foo{}, nil }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP019"]
+
+    result = run_scan(config)
+    gbp019 = [f for f in result.findings if f.rule_id == "GBP019"]
+
+    assert gbp019 == [], f"Expected no findings, got: {gbp019}"
+
+
 def test_rule_008_wrong_defer_detected_with_blank_line_between(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "defer.go").write_text(
