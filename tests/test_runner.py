@@ -1041,6 +1041,40 @@ func Open(name string) {
     assert any("defer" in f.message.lower() or "close" in f.message.lower() for f in gbp008)
 
 
+def test_rule_008_no_finding_when_err_checked_before_defer(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "defer_correct.go").write_text(
+        """
+package sample
+
+import "os"
+
+func Open(name string) {
+    f, err := os.Open(name)
+    if err != nil {
+        return
+    }
+    defer f.Close()
+    _ = f
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP008"]
+
+    result = run_scan(config)
+    gbp008_defer = [
+        f for f in result.findings
+        if f.rule_id == "GBP008" and "defer" in f.message.lower()
+    ]
+
+    assert gbp008_defer == [], f"Should not flag correct defer-after-err-check pattern: {gbp008_defer}"
+
+
 def test_rule_006_body_close_in_other_function_does_not_suppress_finding(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "http.go").write_text(
@@ -1100,6 +1134,32 @@ func Run(err error) {
 
     assert "GBP003" in rule_ids
     assert "GBP008" not in rule_ids
+
+
+def test_rule_005_waitgroup_without_goroutines_does_not_fire(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "wg.go").write_text(
+        """
+package sample
+
+import "sync"
+
+func Wait(wg *sync.WaitGroup) {
+    wg.Wait()
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP005"]
+
+    result = run_scan(config)
+    gbp005 = [f for f in result.findings if f.rule_id == "GBP005"]
+
+    assert gbp005 == [], f"Expected no findings for WaitGroup without goroutines, got: {gbp005}"
 
 
 def test_comment_rules_do_not_apply_to_test_files_by_default(tmp_path: Path, monkeypatch) -> None:

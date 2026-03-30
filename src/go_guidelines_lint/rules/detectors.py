@@ -58,6 +58,12 @@ _NIL_CHECK_RE = re.compile(r'if\s+(?:([A-Za-z_]\w*)\s*==\s*nil|nil\s*==\s*([A-Za
 _SKIPPED_NIL_IDENTS = {"err", "ok"}
 _FUNC_SIGNATURE_RE = re.compile(r"func\s*(\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\((.*?)\)\s*(.*)", re.DOTALL)
 _DIRECT_CALL_RE = re.compile(r"(?<!\.)\b([A-Za-z_]\w*)\s*\(")
+_DEFER_CLOSE_RE = re.compile(r'defer\s+(\w+)\.Close\(\)')
+_ASSIGN_ERR_RE = re.compile(r'\b(\w+)\s*,\s*err\s*:=')
+_ERR_CHECK_RE = re.compile(r'if\s+err\s*!=\s*nil')
+_HTTP_CALL_RE = re.compile(r'\.Do\(|http\.Get\(')
+_IO_READALL_NOERR_RE = re.compile(r'_\s*,\s*_\s*:=\s*io\.ReadAll\(')
+_PANIC_RE = re.compile(r'\bpanic\((?!\s*err\s*\))')
 
 
 def _split_params(params: str) -> list[str]:
@@ -274,7 +280,7 @@ def _detect_rule_4(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
 def _detect_rule_5(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
     findings: list[Finding] = []
     text = ctx.go_file.content
-    if "WaitGroup" in text and "errgroup.WithContext" not in text:
+    if "WaitGroup" in text and "errgroup.WithContext" not in text and _GO_STMT_RE.search(text):
         idx = text.find("WaitGroup")
         findings.append(
             make_finding(
@@ -333,8 +339,7 @@ def _detect_rule_6(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
             )
         )
 
-    http_call_re = re.compile(r'\.Do\(|http\.Get\(')
-    funcs_with_http = [f for f in ctx.funcs if http_call_re.search(f.body)]
+    funcs_with_http = [f for f in ctx.funcs if _HTTP_CALL_RE.search(f.body)]
     for func in funcs_with_http:
         if ".Body.Close()" not in func.body:
             findings.append(
@@ -347,7 +352,7 @@ def _detect_rule_6(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
                 )
             )
 
-    if not funcs_with_http and http_call_re.search(text) and ".Body.Close()" not in text:
+    if not funcs_with_http and _HTTP_CALL_RE.search(text) and ".Body.Close()" not in text:
         idx = text.find(".Do(") if ".Do(" in text else text.find("http.Get(")
         findings.append(
             make_finding(
@@ -359,8 +364,7 @@ def _detect_rule_6(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
             )
         )
 
-    readall_noerr = re.compile(r'_\s*,\s*_\s*:=\s*io\.ReadAll\(')
-    for match in readall_noerr.finditer(text):
+    for match in _IO_READALL_NOERR_RE.finditer(text):
         findings.append(
             make_finding(
                 meta,
@@ -424,23 +428,19 @@ def _detect_rule_7(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
 def _detect_rule_8(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
     findings: list[Finding] = []
 
-    defer_close_re = re.compile(r'defer\s+(\w+)\.Close\(\)')
-    assign_err_re = re.compile(r'\b(\w+)\s*,\s*err\s*:=')
-    err_check_re = re.compile(r'if\s+err\s*!=\s*nil')
-
     for func in ctx.funcs:
         body = func.body
-        for defer_match in defer_close_re.finditer(body):
+        for defer_match in _DEFER_CLOSE_RE.finditer(body):
             var_name = defer_match.group(1)
             defer_pos = defer_match.start()
             assign_match = None
-            for m in assign_err_re.finditer(body):
+            for m in _ASSIGN_ERR_RE.finditer(body):
                 if m.group(1) == var_name and m.start() < defer_pos:
                     assign_match = m
             if assign_match is None:
                 continue
-            err_check_match = err_check_re.search(body, defer_pos)
-            if err_check_match is None:
+            err_check_between = _ERR_CHECK_RE.search(body, assign_match.end(), defer_pos)
+            if err_check_between is not None:
                 continue
             findings.append(
                 make_finding(
@@ -453,8 +453,7 @@ def _detect_rule_8(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
                 )
             )
 
-    panic_re = re.compile(r'\bpanic\((?!\s*err\s*\))')
-    for match in panic_re.finditer(ctx.go_file.content):
+    for match in _PANIC_RE.finditer(ctx.go_file.content):
         findings.append(
             make_finding(
                 meta,
