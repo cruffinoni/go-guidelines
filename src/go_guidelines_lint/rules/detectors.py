@@ -424,7 +424,7 @@ def _detect_rule_8(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
             )
         )
 
-    panic_re = re.compile(r'\bpanic\(')
+    panic_re = re.compile(r'\bpanic\((?!\s*err\s*\))')
     for match in panic_re.finditer(ctx.go_file.content):
         findings.append(
             make_finding(

@@ -948,6 +948,31 @@ import (
     assert any("Dot-import found in import block" in f.message for f in gbp001)
 
 
+def test_panic_err_reported_only_by_gbp003_not_gbp008(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "panic.go").write_text(
+        """
+package sample
+
+func Run(err error) {
+    panic(err)
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP003", "GBP008"]
+
+    result = run_scan(config)
+    rule_ids = [f.rule_id for f in result.findings]
+
+    assert "GBP003" in rule_ids
+    assert "GBP008" not in rule_ids
+
+
 def test_comment_rules_do_not_apply_to_test_files_by_default(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     comments = Path("tests/fixtures/basic/COMMENTS.md").resolve()
