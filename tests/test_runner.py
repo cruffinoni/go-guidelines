@@ -108,7 +108,7 @@ func BuildAPI(handler *Handler, name string) {}
     assert has_blocking_findings(result, "warning") is True
 
 
-def test_gbp010_and_gbp015_are_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
+def test_gbp010_gbp015_and_gbp020_are_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "payload.go").write_text(
         """
@@ -116,6 +116,13 @@ package sample
 
 type Payload struct {
     Items []string `json:"items"`
+}
+
+func Build(
+    a string,
+    b int,
+) error {
+    return nil
 }
 """.strip(),
         encoding="utf-8",
@@ -143,12 +150,14 @@ func TestPayload(t *testing.T) {
     rule_ids = {finding.rule_id for finding in result.findings}
     assert "GBP010" not in rule_ids
     assert "GBP015" not in rule_ids
+    assert "GBP020" not in rule_ids
 
-    config.rules.enable = ["GBP010", "GBP015"]
+    config.rules.enable = ["GBP010", "GBP015", "GBP020"]
     enabled_result = run_scan(config)
     enabled_rule_ids = {finding.rule_id for finding in enabled_result.findings}
     assert "GBP010" in enabled_rule_ids
     assert "GBP015" in enabled_rule_ids
+    assert "GBP020" in enabled_rule_ids
 
 
 def test_rule_020_flags_multiline_signature_that_fits_single_line(tmp_path: Path, monkeypatch) -> None:
@@ -507,6 +516,436 @@ func ExampleGetName() {
     assert "GCM007" in rule_ids
     assert "GCM008" not in rule_ids
     assert "GCM009" in rule_ids
+
+
+def test_rule_020_single_line_exactly_at_max_len_does_not_fire(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    sig = "func ExactlyMaxLen(a string, b int, c bool, d float64, e []byte, f map[string]int, gxxxxxxxxxxxxxxxxxxxxxx string) error"
+    assert len(sig) == 120
+    (tmp_path / "exact.go").write_text(
+        f"package sample\n\n{sig} {{\n\treturn nil\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings == []
+
+
+def test_rule_020_single_line_one_over_max_len_fires(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    sig = "func ExactlyMaxLen(a string, b int, c bool, d float64, e []byte, f map[string]int, gxxxxxxxxxxxxxxxxxxxxxxx string) error"
+    assert len(sig) == 121
+    (tmp_path / "one_over.go").write_text(
+        f"package sample\n\n{sig} {{\n\treturn nil\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert len(gbp020_findings) == 1
+    assert "exceeds 120 characters" in gbp020_findings[0].message
+
+
+def test_rule_020_multiline_signature_still_too_long_is_flagged(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "multiline_too_long.go").write_text(
+        """
+package sample
+
+func ProcessWithManyLongParamNames(
+\talpha string,
+\tbeta int,
+\tgamma bool,
+\tdelta float64,
+\tepsilon []byte,
+\tzeta map[string]int,
+) (string, error) {
+\treturn "", nil
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert len(gbp020_findings) == 1
+    assert "still exceeds 120 characters" in gbp020_findings[0].message
+
+
+def test_rule_020_method_multiline_fits_single_line(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "method_multiline.go").write_text(
+        """
+package sample
+
+type Svc struct{}
+
+func (s *Svc) Do(
+\tname string,
+\tval int,
+) error { return nil }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings
+    assert any("could fit on one line" in f.message for f in gbp020_findings)
+    assert any("(s *Svc)" in (f.suggestion or "") for f in gbp020_findings)
+
+
+def test_rule_020_method_single_line_too_long(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    sig = "func (s *Service) ProcessLongName(alpha string, beta int, gamma bool, delta float64) error"
+    assert len(sig) == 90
+    (tmp_path / "method_long.go").write_text(
+        f"package sample\n\ntype Service struct{{}}\n\n{sig} {{\n\treturn nil\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1, max_line_length=80)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings
+    assert any("exceeds 80 characters" in f.message for f in gbp020_findings)
+    assert any("(s *Service)" in (f.suggestion or "") for f in gbp020_findings)
+
+
+def test_rule_020_multiple_return_values_multiline_fits(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "multi_return.go").write_text(
+        """
+package sample
+
+func Split(
+\tinput string,
+\tsep string,
+) (string, error) { return "", nil }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings
+    assert any("could fit on one line" in f.message for f in gbp020_findings)
+    assert any("(string, error)" in (f.suggestion or "") for f in gbp020_findings)
+
+
+def test_rule_020_variadic_param_multiline_fits(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "variadic.go").write_text(
+        """
+package sample
+
+func Log(
+\tmsg string,
+\targs ...any,
+) {}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings
+    assert any("could fit on one line" in f.message for f in gbp020_findings)
+    assert any("...any" in (f.suggestion or "") for f in gbp020_findings)
+
+
+def test_rule_020_chan_params_single_line_too_long(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    sig = "func Produce(out chan<- string, done <-chan bool, count int, prefix string, tag string) error"
+    assert len(sig) == 93
+    (tmp_path / "chan_params.go").write_text(
+        f"package sample\n\n{sig} {{\n\treturn nil\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1, max_line_length=80)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings
+    assert any("exceeds 80 characters" in f.message for f in gbp020_findings)
+    finding = next(f for f in gbp020_findings if "exceeds 80 characters" in f.message)
+    assert finding.evidence is not None
+    assert "chan<- string" in finding.evidence
+    assert "<-chan bool" in finding.evidence
+
+
+def test_rule_020_map_param_multiline_fits(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "map_param.go").write_text(
+        """
+package sample
+
+func ProcessItems(
+\tdata map[string]int,
+\tname string,
+\tvalue bool,
+) error { return nil }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings
+    assert any("could fit on one line" in f.message for f in gbp020_findings)
+    assert any("map[string]int" in (f.suggestion or "") for f in gbp020_findings)
+
+
+def test_rule_020_function_type_param_single_line_too_long(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    sig = "func Transform(data []byte, fn func([]byte) ([]byte, error), timeout int) ([]byte, error)"
+    assert len(sig) == 89
+    (tmp_path / "fn_param.go").write_text(
+        f"package sample\n\n{sig} {{\n\treturn nil, nil\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1, max_line_length=80)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings
+    assert any("exceeds 80 characters" in f.message for f in gbp020_findings)
+    assert any(f.suggestion is not None for f in gbp020_findings)
+
+
+def test_rule_020_no_param_long_function_name_fires(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    sig = "func InitializeDefaultApplicationConfigurationForAllRegisteredComponentsX() error"
+    assert len(sig) == 81
+    (tmp_path / "long_name.go").write_text(
+        f"package sample\n\n{sig} {{\n\treturn nil\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1, max_line_length=80)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings
+    assert any("exceeds 80 characters" in f.message for f in gbp020_findings)
+    assert any(f.suggestion is not None for f in gbp020_findings)
+
+
+def test_rule_020_generic_function_does_not_crash(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "generic.go").write_text(
+        """
+package sample
+
+func Map[T, U any](slice []T, fn func(T) U) []U { return nil }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1, max_line_length=40)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert len(gbp020_findings) == 1
+    assert gbp020_findings[0].suggestion == "Break signature into multiple lines with one parameter per line."
+
+
+def test_rule_020_clean_functions_produce_no_findings(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "clean.go").write_text(
+        """
+package sample
+
+func Add(a, b int) int { return a + b }
+
+func Greet(name string) string { return name }
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings == []
+
+
+def test_rule_020_mixed_file_flags_only_bad_function(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "mixed.go").write_text(
+        """
+package sample
+
+func Add(a, b int) int { return a + b }
+
+func Build(
+\ta string,
+\tb int,
+) error {
+\treturn nil
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP020"]
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert len(gbp020_findings) == 1
+    assert "could fit on one line" in gbp020_findings[0].message
+
+
+def test_rule_001_dot_import_in_block_produces_single_finding(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "dot.go").write_text(
+        """
+package sample
+
+import (
+    . "fmt"
+    "os"
+)
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP001"]
+
+    result = run_scan(config)
+    gbp001 = [f for f in result.findings if f.rule_id == "GBP001"]
+
+    assert len(gbp001) == 1
+    assert "Dot-import found in import block" in gbp001[0].message
+
+
+def test_rule_001_standalone_dot_import_produces_single_finding(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "dot.go").write_text(
+        """
+package sample
+
+import . "fmt"
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP001"]
+
+    result = run_scan(config)
+    gbp001 = [f for f in result.findings if f.rule_id == "GBP001"]
+
+    assert len(gbp001) == 1
+    assert "pollutes namespace" in gbp001[0].message
+
+
+def test_rule_001_mixed_standalone_and_block_produces_two_findings(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "dot.go").write_text(
+        """
+package sample
+
+import . "log"
+
+import (
+    . "fmt"
+    "os"
+)
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP001"]
+
+    result = run_scan(config)
+    gbp001 = [f for f in result.findings if f.rule_id == "GBP001"]
+
+    assert len(gbp001) == 2
+    assert any("pollutes namespace" in f.message for f in gbp001)
+    assert any("Dot-import found in import block" in f.message for f in gbp001)
 
 
 def test_comment_rules_do_not_apply_to_test_files_by_default(tmp_path: Path, monkeypatch) -> None:

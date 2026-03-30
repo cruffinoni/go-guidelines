@@ -33,6 +33,8 @@ class RuleDefinition:
 
 _DOT_IMPORT_RE = re.compile(r'^\s*import\s+\.\s+"[^"]+"', re.MULTILINE)
 _DOT_IMPORT_BLOCK_RE = re.compile(r'^\s*\.\s+"[^"]+"', re.MULTILINE)
+_IMPORT_BLOCK_SPAN_RE = re.compile(r'\bimport\s*\(([^)]*)\)', re.DOTALL)
+_LINE_COMMENT_STRIP_RE = re.compile(r'//[^\n]*')
 _PACKAGE_RE = re.compile(r'^\s*package\s+([A-Za-z_]\w*)\s*$', re.MULTILINE)
 _PANIC_ERR_RE = re.compile(r'panic\(\s*err\s*\)')
 _FMT_ERRORF_ERR_RE = re.compile(r'fmt\.Errorf\(\s*"([^"]+)"\s*,\s*err\s*\)')
@@ -105,18 +107,19 @@ def _to_multiline_signature(signature: str) -> str | None:
 
 def _detect_rule_1(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
     findings: list[Finding] = []
-    for match in _DOT_IMPORT_RE.finditer(ctx.go_file.content):
-        findings.append(
-            make_finding(
-                meta,
-                ctx.go_file,
-                match.start(),
-                "Avoid `import .`; it pollutes namespace and harms readability.",
-                suggestion="Use explicit package-qualified symbols.",
-                evidence=match.group(0).strip(),
-            )
-        )
-    for match in _DOT_IMPORT_BLOCK_RE.finditer(ctx.go_file.content):
+    content = ctx.go_file.content
+    stripped = _LINE_COMMENT_STRIP_RE.sub(lambda m: ' ' * len(m.group(0)), content)
+
+    block_spans: list[tuple[int, int]] = [
+        (m.start(), m.end()) for m in _IMPORT_BLOCK_SPAN_RE.finditer(stripped)
+    ]
+
+    def inside_block(pos: int) -> bool:
+        return any(start <= pos < end for start, end in block_spans)
+
+    for match in _DOT_IMPORT_BLOCK_RE.finditer(stripped):
+        if not inside_block(match.start()):
+            continue
         findings.append(
             make_finding(
                 meta,
@@ -124,9 +127,24 @@ def _detect_rule_1(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
                 match.start(),
                 "Dot-import found in import block.",
                 suggestion="Use named imports instead.",
-                evidence=match.group(0).strip(),
+                evidence=content[match.start():match.end()].strip(),
             )
         )
+
+    for match in _DOT_IMPORT_RE.finditer(stripped):
+        if inside_block(match.start()):
+            continue
+        findings.append(
+            make_finding(
+                meta,
+                ctx.go_file,
+                match.start(),
+                "Avoid `import .`; it pollutes namespace and harms readability.",
+                suggestion="Use explicit package-qualified symbols.",
+                evidence=content[match.start():match.end()].strip(),
+            )
+        )
+
     return findings
 
 
@@ -723,6 +741,19 @@ def _detect_rule_20(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
                     func.start_idx,
                     f"Multiline function signature could fit on one line (<= {max_len} chars).",
                     suggestion=f"Use single-line signature: `{compact}`",
+                )
+            )
+            continue
+
+        if "\n" in sig and len(compact) > max_len:
+            findings.append(
+                make_finding(
+                    meta,
+                    ctx.go_file,
+                    func.start_idx,
+                    f"Multiline function signature compact form still exceeds {max_len} characters.",
+                    suggestion="Reduce parameter count, introduce type aliases, or split into multiple functions.",
+                    evidence=compact,
                 )
             )
             continue
