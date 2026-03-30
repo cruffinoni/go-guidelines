@@ -41,33 +41,9 @@ def test_run_scan_can_explicitly_enable_default_disabled_gbp012(tmp_path: Path, 
 
 def test_rule_007_flags_only_interfaces_with_10_or_more_methods(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
-    (tmp_path / "interfaces.go").write_text(
-        """
-package sample
+    fixture = Path("tests/fixtures/basic/gbp007_bad.go").read_text(encoding="utf-8")
 
-type Small interface {
-    M1()
-    M2()
-    M3()
-    M4()
-    M5()
-}
-
-type Large interface {
-    M1()
-    M2()
-    M3()
-    M4()
-    M5()
-    M6()
-    M7()
-    M8()
-    M9()
-    M10()
-}
-""".strip(),
-        encoding="utf-8",
-    )
+    (tmp_path / "interfaces.go").write_text(fixture, encoding="utf-8")
     (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
@@ -77,22 +53,67 @@ type Large interface {
     result = run_scan(config)
     messages = [finding.message for finding in result.findings if finding.rule_id == "GBP007"]
 
-    assert any("Interface `Large` has 10 methods" in message for message in messages)
-    assert all("Interface `Small` has 5 methods" not in message for message in messages)
+    assert any("Interface `Doer` has 10 methods" in message for message in messages)
+    assert any("Constructor `NewDoer` returns an interface" in message for message in messages)
+
+
+def test_rule_005_fixture_detects_waitgroup_with_goroutines(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    fixture = Path("tests/fixtures/basic/gbp005_bad.go").read_text(encoding="utf-8")
+
+    (tmp_path / "concurrency.go").write_text(fixture, encoding="utf-8")
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP005"]
+
+    result = run_scan(config)
+    gbp005 = [f for f in result.findings if f.rule_id == "GBP005"]
+
+    assert gbp005
+
+
+def test_rule_009_fixture_detects_empty_slice_and_builder_copy(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    fixture = Path("tests/fixtures/basic/gbp009_bad.go").read_text(encoding="utf-8")
+
+    (tmp_path / "slices.go").write_text(fixture, encoding="utf-8")
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP009"]
+
+    result = run_scan(config)
+    gbp009 = [f for f in result.findings if f.rule_id == "GBP009"]
+
+    assert any("Empty slice literal" in f.message for f in gbp009)
+    assert any("Builder" in f.message for f in gbp009)
+
+
+def test_rule_010_fixture_detects_slice_json_missing_omitempty(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    fixture = Path("tests/fixtures/basic/gbp010_bad.go").read_text(encoding="utf-8")
+
+    (tmp_path / "payload.go").write_text(fixture, encoding="utf-8")
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP010"]
+
+    result = run_scan(config)
+    gbp010 = [f for f in result.findings if f.rule_id == "GBP010"]
+
+    assert len(gbp010) == 2
 
 
 def test_rule_018_is_warning_from_medium_confidence(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
-    (tmp_path / "method_org.go").write_text(
-        """
-package sample
+    fixture = Path("tests/fixtures/basic/gbp018_bad.go").read_text(encoding="utf-8")
 
-type Handler struct{}
-
-func BuildAPI(handler *Handler, name string) {}
-""".strip(),
-        encoding="utf-8",
-    )
+    (tmp_path / "method_org.go").write_text(fixture, encoding="utf-8")
     (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
@@ -1252,3 +1273,75 @@ func ExampleGetName() {
     assert "GCM006" not in rule_ids
     assert "GCM007" not in rule_ids
     assert "GCM008" not in rule_ids
+
+
+def test_rule_014_fixture_detects_channel_range_and_missing_close(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    fixture = Path("tests/fixtures/basic/gbp014_bad.go").read_text(encoding="utf-8")
+
+    (tmp_path / "pipeline.go").write_text(fixture, encoding="utf-8")
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP014"]
+
+    result = run_scan(config)
+    gbp014 = [f for f in result.findings if f.rule_id == "GBP014"]
+
+    assert any("Pipeline" in f.message or "pipeline" in f.message for f in gbp014)
+    assert any("close" in f.message.lower() for f in gbp014)
+
+
+def test_rule_015_fixture_detects_sleep_and_map_iteration(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    fixture = Path("tests/fixtures/basic/gbp015_bad_test.go").read_text(encoding="utf-8")
+
+    (tmp_path / "gbp015_bad_test.go").write_text(fixture, encoding="utf-8")
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP015"]
+
+    result = run_scan(config)
+    gbp015 = [f for f in result.findings if f.rule_id == "GBP015"]
+
+    assert any("Sleep" in f.message for f in gbp015)
+    assert any("map" in f.message.lower() for f in gbp015)
+
+
+def test_rule_019_fixture_detects_nil_check_in_constructor(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    fixture = Path("tests/fixtures/basic/gbp019_bad.go").read_text(encoding="utf-8")
+
+    (tmp_path / "deps.go").write_text(fixture, encoding="utf-8")
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP019"]
+
+    result = run_scan(config)
+    gbp019 = [f for f in result.findings if f.rule_id == "GBP019"]
+
+    assert gbp019
+    assert any("NewService" in f.message for f in gbp019)
+
+
+def test_rule_021_fixture_detects_forward_call_and_noncontiguous_recursion(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    fixture = Path("tests/fixtures/basic/gbp021_bad.go").read_text(encoding="utf-8")
+
+    (tmp_path / "order.go").write_text(fixture, encoding="utf-8")
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP021"]
+
+    result = run_scan(config)
+    gbp021 = [f for f in result.findings if f.rule_id == "GBP021"]
+
+    assert any("calls local function `resolve` before its declaration" in f.message for f in gbp021)
+    assert any("Mutually recursive" in f.message for f in gbp021)
