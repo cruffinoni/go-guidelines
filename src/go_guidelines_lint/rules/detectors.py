@@ -113,6 +113,13 @@ def _to_multiline_signature(signature: str) -> str | None:
     return "\n".join(lines)
 
 
+def _strip_comments_and_strings(body: str) -> str:
+    body = re.sub(r'//[^\n]*', '', body)
+    body = re.sub(r'"[^"\n]*"', '""', body)
+    body = re.sub(r'`[^`]*`', '``', body)
+    return body
+
+
 def _detect_rule_1(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
     findings: list[Finding] = []
     content = ctx.go_file.content
@@ -869,7 +876,8 @@ def _detect_rule_21(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
     edges: dict[int, set[int]] = {}
     for caller_idx, func in enumerate(declarations):
         callees: set[int] = set()
-        for match in _DIRECT_CALL_RE.finditer(func.body):
+        stripped_body = _strip_comments_and_strings(func.body)
+        for match in _DIRECT_CALL_RE.finditer(stripped_body):
             callee_name = match.group(1)
             callee_idx = unique_name_to_idx.get(callee_name)
             if callee_idx is None:

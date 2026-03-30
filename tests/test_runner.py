@@ -1136,6 +1136,33 @@ func Run(err error) {
     assert "GBP008" not in rule_ids
 
 
+def test_rule_021_does_not_flag_call_mentioned_only_in_comment(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "order_comment.go").write_text(
+        """
+package sample
+
+func Build() {
+    // calls resolve() to process items
+    _ = "resolve() is mentioned here"
+}
+
+func resolve() {}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP021"]
+
+    result = run_scan(config)
+    gbp021 = [f for f in result.findings if f.rule_id == "GBP021"]
+
+    assert gbp021 == [], f"Expected no forward-call finding from comment/string, got: {gbp021}"
+
+
 def test_rule_014_does_not_fire_for_unrelated_range_and_channel(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "pipeline.go").write_text(
