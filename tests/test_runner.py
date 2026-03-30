@@ -948,6 +948,39 @@ import (
     assert any("Dot-import found in import block" in f.message for f in gbp001)
 
 
+def test_rule_008_wrong_defer_detected_with_blank_line_between(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "defer.go").write_text(
+        """
+package sample
+
+import "os"
+
+func Open(name string) {
+    f, err := os.Open(name)
+
+    defer f.Close()
+
+    if err != nil {
+        return
+    }
+    _ = f
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP008"]
+
+    result = run_scan(config)
+    gbp008 = [f for f in result.findings if f.rule_id == "GBP008"]
+
+    assert any("defer" in f.message.lower() or "close" in f.message.lower() for f in gbp008)
+
+
 def test_rule_006_body_close_in_other_function_does_not_suppress_finding(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "http.go").write_text(

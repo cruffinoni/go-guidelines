@@ -422,21 +422,35 @@ def _detect_rule_7(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
 
 def _detect_rule_8(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
     findings: list[Finding] = []
-    wrong_defer_re = re.compile(
-        r'(\w+)\s*,\s*err\s*:=\s*[^\n]+\n\s*defer\s+\1\.Close\(\)\s*\n\s*if\s+err\s*!=\s*nil',
-        re.MULTILINE,
-    )
-    for match in wrong_defer_re.finditer(ctx.go_file.content):
-        findings.append(
-            make_finding(
-                meta,
-                ctx.go_file,
-                match.start(),
-                "`defer Close()` occurs before checking acquisition error.",
-                suggestion="Check `err` first, then `defer` resource close.",
-                evidence=match.group(0).splitlines()[1].strip(),
+
+    defer_close_re = re.compile(r'defer\s+(\w+)\.Close\(\)')
+    assign_err_re = re.compile(r'\b(\w+)\s*,\s*err\s*:=')
+    err_check_re = re.compile(r'if\s+err\s*!=\s*nil')
+
+    for func in ctx.funcs:
+        body = func.body
+        for defer_match in defer_close_re.finditer(body):
+            var_name = defer_match.group(1)
+            defer_pos = defer_match.start()
+            assign_match = None
+            for m in assign_err_re.finditer(body):
+                if m.group(1) == var_name and m.start() < defer_pos:
+                    assign_match = m
+            if assign_match is None:
+                continue
+            err_check_match = err_check_re.search(body, defer_pos)
+            if err_check_match is None:
+                continue
+            findings.append(
+                make_finding(
+                    meta,
+                    ctx.go_file,
+                    func.start_idx + defer_match.start(),
+                    "`defer Close()` occurs before checking acquisition error.",
+                    suggestion="Check `err` first, then `defer` resource close.",
+                    evidence=defer_match.group(0),
+                )
             )
-        )
 
     panic_re = re.compile(r'\bpanic\((?!\s*err\s*\))')
     for match in panic_re.finditer(ctx.go_file.content):
