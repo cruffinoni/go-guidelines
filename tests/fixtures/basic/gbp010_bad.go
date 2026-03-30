@@ -1,4 +1,4 @@
-package json
+package util
 
 type Payload struct {
 	Items []string `json:"items"`

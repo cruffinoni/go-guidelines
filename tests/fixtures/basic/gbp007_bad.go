@@ -1,4 +1,4 @@
-package ifaces
+package util
 
 type Doer interface {
 	M1()

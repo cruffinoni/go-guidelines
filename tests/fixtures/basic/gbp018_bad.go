@@ -1,4 +1,4 @@
-package methods
+package util
 
 type Handler struct{}
 
