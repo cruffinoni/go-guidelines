@@ -948,6 +948,42 @@ import (
     assert any("Dot-import found in import block" in f.message for f in gbp001)
 
 
+def test_rule_006_body_close_in_other_function_does_not_suppress_finding(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "http.go").write_text(
+        """
+package sample
+
+import "net/http"
+
+func FetchWithClose() {
+    resp, _ := http.Get("https://example.com")
+    defer resp.Body.Close()
+    _ = resp
+}
+
+func FetchWithoutClose() {
+    resp, _ := http.Get("https://example.com")
+    _ = resp
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP006"]
+
+    result = run_scan(config)
+    body_close_findings = [
+        f for f in result.findings
+        if f.rule_id == "GBP006" and "body" in f.message.lower()
+    ]
+
+    assert body_close_findings, "Expected a body-close finding for FetchWithoutClose"
+
+
 def test_panic_err_reported_only_by_gbp003_not_gbp008(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "panic.go").write_text(

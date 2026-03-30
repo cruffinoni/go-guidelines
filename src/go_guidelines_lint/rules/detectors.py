@@ -332,7 +332,21 @@ def _detect_rule_6(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
             )
         )
 
-    if (".Do(" in text or "http.Get(" in text) and ".Body.Close()" not in text:
+    http_call_re = re.compile(r'\.Do\(|http\.Get\(')
+    funcs_with_http = [f for f in ctx.funcs if http_call_re.search(f.body)]
+    for func in funcs_with_http:
+        if ".Body.Close()" not in func.body:
+            findings.append(
+                make_finding(
+                    meta,
+                    ctx.go_file,
+                    func.start_idx,
+                    "HTTP response body may not be closed.",
+                    suggestion="Call `defer resp.Body.Close()` after successful request.",
+                )
+            )
+
+    if not funcs_with_http and http_call_re.search(text) and ".Body.Close()" not in text:
         idx = text.find(".Do(") if ".Do(" in text else text.find("http.Get(")
         findings.append(
             make_finding(
