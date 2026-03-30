@@ -44,7 +44,7 @@ _INTERFACE_BLOCK_RE = re.compile(r'type\s+([A-Za-z_]\w*)\s+interface\s*\{(.*?)\}
 _GO_STMT_RE = re.compile(r'^\s*go\s+.+$', re.MULTILINE)
 _HTTP_GET_RE = re.compile(r'\bhttp\.Get\(')
 _NEW_REQUEST_RE = re.compile(r'\bhttp\.NewRequest\(')
-_LOG_PRINTF_RE = re.compile(r'\blog\.(?:Printf|Println|Print)\(')
+_LOG_PRINTF_RE = re.compile(r'\blog\.(?:Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln)\(')
 _AFTER_FUNC_RE = re.compile(r'\btime\.AfterFunc\(')
 _NEW_TICKER_ASSIGN_RE = re.compile(r'\b([A-Za-z_]\w*)\s*:=\s*time\.NewTicker\(')
 _NEW_TIMER_ASSIGN_RE = re.compile(r'\b([A-Za-z_]\w*)\s*:=\s*time\.NewTimer\(')
