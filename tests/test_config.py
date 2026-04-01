@@ -153,3 +153,47 @@ disable = ["GBP1"]
     assert "Configuration error:" in result.output
     assert "[tool.go_guidelines.rules.disable]" in result.output
     assert "Malformed rule id" in result.output
+
+
+def test_appconfig_defaults_for_new_fields() -> None:
+    config = AppConfig()
+    assert config.llm is None
+    assert config.git_only is False
+
+
+def test_merge_cli_overrides_sets_llm() -> None:
+    config = AppConfig()
+    result = merge_cli_overrides(config, {"llm": "claude"})
+    assert result.llm == "claude"
+
+
+def test_merge_cli_overrides_llm_none_does_not_override() -> None:
+    config = merge_cli_overrides(AppConfig(), {"llm": "claude"})
+    result = merge_cli_overrides(config, {"llm": None})
+    assert result.llm == "claude"
+
+
+def test_merge_cli_overrides_sets_git_only_true() -> None:
+    config = AppConfig()
+    result = merge_cli_overrides(config, {"git_only": True})
+    assert result.git_only is True
+
+
+def test_merge_cli_overrides_git_only_false_does_not_swallow() -> None:
+    config = merge_cli_overrides(AppConfig(), {"git_only": True})
+    result = merge_cli_overrides(config, {"git_only": False})
+    assert result.git_only is False
+
+
+def test_load_config_reads_llm_from_toml(tmp_path: Path) -> None:
+    toml = tmp_path / "pyproject.toml"
+    toml.write_text('[tool.go_guidelines]\nllm = "claude"\n', encoding="utf-8")
+    config = load_config(toml)
+    assert config.llm == "claude"
+
+
+def test_load_config_reads_git_only_from_toml(tmp_path: Path) -> None:
+    toml = tmp_path / "pyproject.toml"
+    toml.write_text('[tool.go_guidelines]\ngit_only = true\n', encoding="utf-8")
+    config = load_config(toml)
+    assert config.git_only is True

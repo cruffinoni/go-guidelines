@@ -58,6 +58,8 @@ class AppConfig:
     fail_on: str = "error"
     max_line_length: int = DEFAULT_MAX_LINE_LENGTH
     max_workers: int = 6
+    llm: str | None = None
+    git_only: bool = False
     include: list[str] = field(default_factory=lambda: list(DEFAULT_INCLUDE))
     exclude: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE))
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -133,6 +135,9 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     config.fail_on = str(data.get("fail_on", config.fail_on))
     config.max_line_length = int(data.get("max_line_length", config.max_line_length))
     config.max_workers = int(data.get("max_workers", config.max_workers))
+    llm_val = data.get("llm", config.llm)
+    config.llm = str(llm_val) if llm_val is not None else None
+    config.git_only = bool(data.get("git_only", config.git_only))
 
     include = data.get("include")
     exclude = data.get("exclude")
@@ -195,6 +200,11 @@ def merge_cli_overrides(config: AppConfig, overrides: dict[str, Any]) -> AppConf
         merged.logging.level = str(overrides["log_level"]).upper()
     if overrides.get("log_format"):
         merged.logging.format = str(overrides["log_format"])
+
+    if overrides.get("llm") is not None:
+        merged.llm = str(overrides["llm"])
+    if overrides.get("git_only") is not None:
+        merged.git_only = bool(overrides["git_only"])
 
     _validate(merged)
     return merged
