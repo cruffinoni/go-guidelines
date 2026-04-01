@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "go-guidelines-lint"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI linter for Go coding guideline violations"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
@@ -46,4 +46,4 @@ format = "text"
 
 [tool.go_guidelines.rules]
 enable = []
-disable = ["GBP010", "GBP012", "GBP015"]
+disable = ["GBP010", "GBP012", "GBP015", "GBP020"]
