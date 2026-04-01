@@ -1,6 +1,6 @@
 package util
 
-func Build() {
+func BuildOrder() {
 	resolve()
 }
 

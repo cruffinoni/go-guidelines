@@ -93,6 +93,7 @@ def test_cli_list_guidelines_json_honors_rule_overrides(tmp_path: Path, monkeypa
     assert by_rule["GBP010"]["default_enabled"] is False
     assert by_rule["GBP010"]["enabled"] is True
     assert by_rule["GBP010"]["set"] == "best"
+    assert by_rule["GBP020"]["default_enabled"] is False
     assert by_rule["GCM001"]["set"] == "comments"
 
 

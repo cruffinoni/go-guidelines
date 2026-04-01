@@ -18,6 +18,7 @@ def test_load_config_defaults_when_missing(tmp_path: Path) -> None:
     assert "GBP010" in config.rules.disable
     assert "GBP012" in config.rules.disable
     assert "GBP015" in config.rules.disable
+    assert "GBP020" in config.rules.disable
 
 
 def test_load_config_from_pyproject(tmp_path: Path) -> None:
@@ -55,6 +56,7 @@ enable = ["GBP001"]
     assert "GBP010" in config.rules.disable
     assert "GBP012" in config.rules.disable
     assert "GBP015" in config.rules.disable
+    assert "GBP020" in config.rules.disable
 
 
 def test_merge_cli_overrides() -> None:
