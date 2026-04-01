@@ -8,7 +8,8 @@ import re
 import time
 
 from go_guidelines_lint.config import AppConfig, expand_user_path
-from go_guidelines_lint.discovery import resolve_go_files
+from go_guidelines_lint.discovery import _normalize_target, resolve_go_files
+from go_guidelines_lint.git_filter import GitError, get_git_changed_files
 from go_guidelines_lint.guidelines_parser import parse_guidelines
 from go_guidelines_lint.models import Finding, RuleMeta, ScanResult
 from go_guidelines_lint.rules import RuleDefinition
@@ -43,6 +44,17 @@ class ScanService:
             spec.name: spec.resolve_guidelines_path(config, best_guidelines_path) for spec in self._rule_sets
         }
         files = resolve_go_files(config.target, config.include, config.exclude, cwd=cwd)
+        if config.git_only:
+            target_path, _ = _normalize_target(config.target, cwd)
+            git_root = target_path if target_path.is_dir() else target_path.parent
+            try:
+                git_changed = get_git_changed_files(git_root)
+            except GitError as exc:
+                raise RuntimeError(str(exc)) from exc
+            git_changed_set = set(git_changed)
+            files = [f for f in files if f in git_changed_set]
+            if not files:
+                logger.info("No changed .go files in scope for git diff HEAD. Nothing to scan.")
         return ScanInputs(
             cwd=cwd,
             target=config.target,
@@ -140,7 +152,7 @@ class ScanService:
         result = ScanResult()
 
         inputs = self._build_scan_inputs(config)
-        logger.info("Scanning %d file(s)", len(inputs.files))
+        logger.debug("Scanning %d file(s)", len(inputs.files))
 
         rules, best_titles = self._load_enabled_rules(config, inputs)
         rules = self._filter_rules(rules, config.rules.enable, config.rules.disable)
