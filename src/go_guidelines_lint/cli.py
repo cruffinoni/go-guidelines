@@ -146,6 +146,26 @@ def _export_completion(ctx: click.Context, param: click.Parameter, value: str | 
     show_default=True,
     help="List all guideline rules and their effective enablement status.",
 )
+@click.option(
+    "--llm",
+    type=click.Choice(["claude", "codex"], case_sensitive=False),
+    default=None,
+    help=(
+        "Inject gg-lint usage instructions into the LLM context file "
+        "(CLAUDE.md for claude, AGENTS.md for codex). Idempotent."
+    ),
+)
+@click.option(
+    "--git",
+    "git_only",
+    is_flag=True,
+    default=False,
+    help=(
+        "Restrict scan to .go files changed per `git diff HEAD` "
+        "(staged + unstaged vs last commit). Untracked files are excluded. "
+        "Fails if not inside a git repository."
+    ),
+)
 def main(
     target: str | None,
     config_path: Path | None,
@@ -163,6 +183,8 @@ def main(
     max_line_length: int | None,
     max_workers: int | None,
     list_guidelines_mode: bool,
+    llm: str | None,
+    git_only: bool,
 ) -> None:
     """Lint Go code against guideline sets."""
 
@@ -186,6 +208,8 @@ def main(
             max_line_length=max_line_length,
             max_workers=max_workers,
             known_rule_ids=known_rule_ids,
+            llm=llm,
+            git_only=git_only,
         )
         config = merge_cli_overrides(config, overrides)
 

@@ -7,6 +7,8 @@ import logging
 import sys
 
 from go_guidelines_lint.config import AppConfig
+from go_guidelines_lint.git_filter import get_git_changed_files
+from go_guidelines_lint.llm_inject import inject_llm_instructions
 from go_guidelines_lint.logging_setup import configure_logging
 from go_guidelines_lint.reporters import (
     render_guidelines_json,
@@ -37,6 +39,8 @@ def build_overrides(
     max_line_length: int | None,
     max_workers: int | None,
     known_rule_ids: set[str],
+    llm: str | None = None,
+    git_only: bool = False,
 ) -> dict[str, object]:
     """Build merge-ready override payload from click arguments."""
 
@@ -58,6 +62,8 @@ def build_overrides(
         "disable_rules": normalize_and_validate_rule_ids(disable_rule_values, "--disable-rule", known_rule_ids),
         "max_line_length": max_line_length,
         "max_workers": max_workers,
+        "llm": llm,
+        "git_only": git_only,
     }
 
 
@@ -68,6 +74,12 @@ def execute(config: AppConfig, *, list_guidelines_mode: bool, stream=None) -> in
 
     configure_logging(config.logging.level, config.logging.format)
     logger.debug("Effective config: %s", config)
+
+    if config.llm:
+        inject_llm_instructions(config.llm, Path.cwd())
+
+    if config.git_only:
+        get_git_changed_files(Path.cwd())
 
     if list_guidelines_mode:
         entries = list_guidelines(config)
