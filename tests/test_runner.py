@@ -202,7 +202,7 @@ func ProcessUserRequestWithManyParametersAndAVeryLongFunctionName(firstName stri
     assert gbp020_findings, "GBP020 should fire by default for long single-line signatures"
 
 
-def test_rule_020_flags_multiline_signature_that_fits_single_line(tmp_path: Path, monkeypatch) -> None:
+def test_rule_020_multiline_signature_that_fits_single_line_does_not_fire(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "signature_short_multiline.go").write_text(
         """
@@ -873,7 +873,7 @@ func Greet(name string) string { return name }
     assert gbp020_findings == []
 
 
-def test_rule_020_mixed_file_flags_only_bad_function(tmp_path: Path, monkeypatch) -> None:
+def test_rule_020_short_multiline_in_mixed_file_does_not_fire(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "mixed.go").write_text(
         """
