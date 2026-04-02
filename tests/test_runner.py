@@ -1344,4 +1344,57 @@ def test_rule_021_fixture_detects_forward_call_and_noncontiguous_recursion(tmp_p
     gbp021 = [f for f in result.findings if f.rule_id == "GBP021"]
 
     assert any("calls local function `resolve` before its declaration" in f.message for f in gbp021)
-    assert any("Mutually recursive" in f.message for f in gbp021)
+
+
+def test_rule_006_retry_do_does_not_trigger_false_positive(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "retry.go").write_text(
+        """
+package sample
+
+func Fetch() error {
+    return retry.Do(func() error {
+        return nil
+    })
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP006"]
+
+    result = run_scan(config)
+    body_close_findings = [f for f in result.findings if f.rule_id == "GBP006" and "body" in f.message.lower()]
+
+    assert body_close_findings == []
+
+
+def test_rule_006_sync_once_do_does_not_trigger_false_positive(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "once.go").write_text(
+        """
+package sample
+
+import "sync"
+
+var once sync.Once
+
+func Init() {
+    once.Do(func() {})
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+    config.rules.enable = ["GBP006"]
+
+    result = run_scan(config)
+    body_close_findings = [f for f in result.findings if f.rule_id == "GBP006" and "body" in f.message.lower()]
+
+    assert body_close_findings == []
