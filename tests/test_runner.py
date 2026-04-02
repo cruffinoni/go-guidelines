@@ -129,7 +129,7 @@ def test_rule_018_is_warning_from_medium_confidence(tmp_path: Path, monkeypatch)
     assert has_blocking_findings(result, "warning") is True
 
 
-def test_gbp010_gbp015_and_gbp020_are_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
+def test_gbp010_and_gbp015_are_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     (tmp_path / "payload.go").write_text(
         """
@@ -171,14 +171,35 @@ func TestPayload(t *testing.T) {
     rule_ids = {finding.rule_id for finding in result.findings}
     assert "GBP010" not in rule_ids
     assert "GBP015" not in rule_ids
-    assert "GBP020" not in rule_ids
 
-    config.rules.enable = ["GBP010", "GBP015", "GBP020"]
+    config.rules.enable = ["GBP010", "GBP015"]
     enabled_result = run_scan(config)
     enabled_rule_ids = {finding.rule_id for finding in enabled_result.findings}
     assert "GBP010" in enabled_rule_ids
     assert "GBP015" in enabled_rule_ids
-    assert "GBP020" in enabled_rule_ids
+
+
+def test_rule_020_is_enabled_by_default(tmp_path: Path, monkeypatch) -> None:
+    guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
+    (tmp_path / "long_sig.go").write_text(
+        """
+package sample
+
+func ProcessUserRequestWithManyParametersAndAVeryLongFunctionName(firstName string, lastName string, emailAddress string, phoneNumber string) error {
+    return nil
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "go.mod").write_text("module example.com/demo\ngo 1.22\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    config = AppConfig(guidelines_path=str(guideline), target="./...", max_workers=1)
+
+    result = run_scan(config)
+    gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
+
+    assert gbp020_findings, "GBP020 should fire by default for long single-line signatures"
 
 
 def test_rule_020_flags_multiline_signature_that_fits_single_line(tmp_path: Path, monkeypatch) -> None:
@@ -205,8 +226,7 @@ func Build(
     result = run_scan(config)
     gbp020_findings = [finding for finding in result.findings if finding.rule_id == "GBP020"]
 
-    assert gbp020_findings
-    assert any("could fit on one line" in finding.message for finding in gbp020_findings)
+    assert gbp020_findings == []
 
 
 def test_rule_020_flags_long_single_line_signature_and_suggests_multiline(tmp_path: Path, monkeypatch) -> None:
@@ -636,9 +656,7 @@ func (s *Svc) Do(
     result = run_scan(config)
     gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
 
-    assert gbp020_findings
-    assert any("could fit on one line" in f.message for f in gbp020_findings)
-    assert any("(s *Svc)" in (f.suggestion or "") for f in gbp020_findings)
+    assert gbp020_findings == []
 
 
 def test_rule_020_method_single_line_too_long(tmp_path: Path, monkeypatch) -> None:
@@ -685,9 +703,7 @@ func Split(
     result = run_scan(config)
     gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
 
-    assert gbp020_findings
-    assert any("could fit on one line" in f.message for f in gbp020_findings)
-    assert any("(string, error)" in (f.suggestion or "") for f in gbp020_findings)
+    assert gbp020_findings == []
 
 
 def test_rule_020_variadic_param_multiline_fits(tmp_path: Path, monkeypatch) -> None:
@@ -712,9 +728,7 @@ func Log(
     result = run_scan(config)
     gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
 
-    assert gbp020_findings
-    assert any("could fit on one line" in f.message for f in gbp020_findings)
-    assert any("...any" in (f.suggestion or "") for f in gbp020_findings)
+    assert gbp020_findings == []
 
 
 def test_rule_020_chan_params_single_line_too_long(tmp_path: Path, monkeypatch) -> None:
@@ -765,9 +779,7 @@ func ProcessItems(
     result = run_scan(config)
     gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
 
-    assert gbp020_findings
-    assert any("could fit on one line" in f.message for f in gbp020_findings)
-    assert any("map[string]int" in (f.suggestion or "") for f in gbp020_findings)
+    assert gbp020_findings == []
 
 
 def test_rule_020_function_type_param_single_line_too_long(tmp_path: Path, monkeypatch) -> None:
@@ -887,8 +899,7 @@ func Build(
     result = run_scan(config)
     gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
 
-    assert len(gbp020_findings) == 1
-    assert "could fit on one line" in gbp020_findings[0].message
+    assert gbp020_findings == []
 
 
 def test_rule_001_dot_import_in_block_produces_single_finding(tmp_path: Path, monkeypatch) -> None:

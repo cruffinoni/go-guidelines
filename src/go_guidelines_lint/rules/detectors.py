@@ -774,17 +774,6 @@ def _detect_rule_20(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
     for func in ctx.funcs:
         sig = func.signature
         compact = " ".join(sig.split())
-        if "\n" in sig and len(compact) <= max_len:
-            findings.append(
-                make_finding(
-                    meta,
-                    ctx.go_file,
-                    func.start_idx,
-                    f"Multiline function signature could fit on one line (<= {max_len} chars).",
-                    suggestion=f"Use single-line signature: `{compact}`",
-                )
-            )
-            continue
 
         if "\n" in sig and len(compact) > max_len:
             findings.append(
