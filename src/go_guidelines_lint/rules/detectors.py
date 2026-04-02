@@ -362,9 +362,8 @@ def _detect_rule_6(ctx: FileContext, meta: RuleMeta) -> list[Finding]:
                 )
             )
 
-    if not funcs_with_http and _HTTP_CALL_RE.search(text) and ".Body.Close()" not in text:
-        m = _HTTP_CALL_RE.search(text)
-        idx = m.start() if m else 0
+    if not funcs_with_http and (m := _HTTP_CALL_RE.search(text)) and ".Body.Close()" not in text:
+        idx = m.start()
         findings.append(
             make_finding(
                 meta,
@@ -946,7 +945,7 @@ def build_rules(guideline_titles: dict[int, str]) -> list[RuleDefinition]:
 
     catalog: list[tuple[RuleMeta, callable, bool]] = [
         (RuleMeta("GBP001", 1, title(1, "Imports and Formatting"), "error", "high"), _detect_rule_1, False),
-        (RuleMeta("GBP002", 2, title(2, "Package Design and Documentation"), "info", "low"), _detect_rule_2, False),
+        (RuleMeta("GBP002", 2, title(2, "Package Design and Documentation"), "warning", "medium"), _detect_rule_2, False),
         (RuleMeta("GBP003", 3, title(3, "Errors"), "error", "high"), _detect_rule_3, False),
         (RuleMeta("GBP004", 4, title(4, "Context Usage"), "warning", "high"), _detect_rule_4, False),
         (RuleMeta("GBP005", 5, title(5, "Concurrency"), "warning", "low"), _detect_rule_5, False),

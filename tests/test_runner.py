@@ -1352,6 +1352,8 @@ def test_rule_006_retry_do_does_not_trigger_false_positive(tmp_path: Path, monke
         """
 package sample
 
+import "github.com/avast/retry-go"
+
 func Fetch() error {
     return retry.Do(func() error {
         return nil
