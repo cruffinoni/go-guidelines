@@ -25,8 +25,11 @@ dev = [
 [project.scripts]
 gg-lint = "go_guidelines_lint.cli:main"
 
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = [".", "src"]
 addopts = "-q"
 
 [tool.go_guidelines]
@@ -35,6 +38,7 @@ enable_comments_guidelines = true
 target = "./..."
 format = "text"
 fail_on = "error"
+changed_lines = false
 max_line_length = 120
 max_workers = 6
 include = ["**/*.go"]
