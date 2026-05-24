@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 import tomllib
 
-DEFAULT_CONFIG_FILE = "pyproject.toml"
+DEFAULT_CONFIG_DIRNAME = ".gg-lint"
+DEFAULT_CONFIG_FILENAME = "config.toml"
+DEFAULT_CONFIG_FILE = f"~/{DEFAULT_CONFIG_DIRNAME}/{DEFAULT_CONFIG_FILENAME}"
 DEFAULT_GUIDELINES_PATH = "~/guidelines/go/GO_BEST_PRACTICES.md"
 DEFAULT_TARGET = "./..."
 DEFAULT_MAX_LINE_LENGTH = 120
@@ -60,6 +62,9 @@ class AppConfig:
     max_workers: int = 6
     llm: str | None = None
     git_only: bool = False
+    changed_lines: bool = False
+    baseline_path: str | None = None
+    write_baseline_path: str | None = None
     include: list[str] = field(default_factory=lambda: list(DEFAULT_INCLUDE))
     exclude: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE))
     logging: LoggingConfig = field(default_factory=LoggingConfig)
@@ -69,6 +74,12 @@ class AppConfig:
 
 class ConfigError(ValueError):
     """Raised when configuration is invalid."""
+
+
+def default_config_path() -> Path:
+    """Return the default shared config path."""
+
+    return Path.home() / DEFAULT_CONFIG_DIRNAME / DEFAULT_CONFIG_FILENAME
 
 
 def _as_list(value: Any) -> list[str]:
@@ -109,20 +120,11 @@ def _validate(config: AppConfig) -> None:
         raise ConfigError("max_line_length must be >= 1")
     if config.max_workers < 1:
         raise ConfigError("max_workers must be >= 1")
+    if config.changed_lines and not config.git_only:
+        raise ConfigError("changed_lines requires git_only to be enabled")
 
 
-def load_config(config_path: Path | None = None) -> AppConfig:
-    """Load linter config from pyproject.toml."""
-
-    config = AppConfig()
-    path = config_path or Path(DEFAULT_CONFIG_FILE)
-    if not path.exists():
-        _validate(config)
-        return config
-
-    raw = _load_toml(path)
-    data = _extract_tool_config(raw)
-
+def _apply_tool_config(config: AppConfig, data: dict[str, Any]) -> AppConfig:
     logging_data = data.get("logging", {}) if isinstance(data.get("logging", {}), dict) else {}
     rules_data = data.get("rules", {}) if isinstance(data.get("rules", {}), dict) else {}
 
@@ -138,6 +140,9 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     llm_val = data.get("llm", config.llm)
     config.llm = str(llm_val) if llm_val is not None else None
     config.git_only = bool(data.get("git_only", config.git_only))
+    config.changed_lines = bool(data.get("changed_lines", config.changed_lines))
+    baseline_path = data.get("baseline_path", config.baseline_path)
+    config.baseline_path = str(baseline_path) if baseline_path else None
 
     include = data.get("include")
     exclude = data.get("exclude")
@@ -154,6 +159,19 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         enable=_as_list(rules_data.get("enable", config.rules.enable)),
         disable=_as_list(rules_data.get("disable", config.rules.disable)),
     )
+    return config
+
+
+def load_config(config_path: Path | None = None) -> AppConfig:
+    """Load linter config from the shared default or an explicit TOML file."""
+
+    config = AppConfig()
+    path = config_path.expanduser() if config_path else default_config_path()
+    if not path.exists():
+        _validate(config)
+        return config
+
+    config = _apply_tool_config(config, _extract_tool_config(_load_toml(path)))
 
     _validate(config)
     return config
@@ -205,6 +223,12 @@ def merge_cli_overrides(config: AppConfig, overrides: dict[str, Any]) -> AppConf
         merged.llm = str(overrides["llm"])
     if overrides.get("git_only") is not None:
         merged.git_only = bool(overrides["git_only"])
+    if overrides.get("changed_lines") is not None:
+        merged.changed_lines = bool(overrides["changed_lines"])
+    if overrides.get("baseline_path"):
+        merged.baseline_path = str(overrides["baseline_path"])
+    if overrides.get("write_baseline_path"):
+        merged.write_baseline_path = str(overrides["write_baseline_path"])
 
     _validate(merged)
     return merged

@@ -6,18 +6,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-_CONFIDENCE_TO_SEVERITY = {
-    "high": "error",
-    "medium": "warning",
-    "low": "info",
-}
-
-
-def severity_from_confidence(confidence: str, default: str = "warning") -> str:
-    """Map confidence to severity using project policy."""
-
-    return _CONFIDENCE_TO_SEVERITY.get(str(confidence).lower(), default)
-
 
 @dataclass(slots=True)
 class RuleMeta:
@@ -28,11 +16,6 @@ class RuleMeta:
     title: str
     severity: str = "warning"
     confidence: str = "medium"
-
-    def __post_init__(self) -> None:
-        """Keep severity aligned with confidence-level policy."""
-
-        self.severity = severity_from_confidence(self.confidence, self.severity)
 
 
 @dataclass(slots=True)
@@ -50,11 +33,6 @@ class Finding:
     column: int = 1
     suggestion: str | None = None
     evidence: str | None = None
-
-    def __post_init__(self) -> None:
-        """Keep severity aligned with confidence-level policy."""
-
-        self.severity = severity_from_confidence(self.confidence, self.severity)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize a finding for JSON output."""
@@ -81,6 +59,7 @@ class ScanResult:
     """Complete output from a lint scan."""
 
     findings: list[Finding] = field(default_factory=list)
+    suppressed_findings: list[Finding] = field(default_factory=list)
     scanned_files: list[str] = field(default_factory=list)
     elapsed_ms: int = 0
     tool_runs: list[ToolRun] = field(default_factory=list)
@@ -104,6 +83,7 @@ class ScanResult:
         """Serialize an entire scan result for machine-readable output."""
         return {
             "findings": [finding.to_dict() for finding in self.findings],
+            "suppressed_findings": len(self.suppressed_findings),
             "counts_by_severity": self.counts_by_severity(),
             "counts_by_rule": self.counts_by_rule(),
             "scanned_files": self.scanned_files,

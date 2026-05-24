@@ -9,7 +9,7 @@ import time
 
 from go_guidelines_lint.config import AppConfig, expand_user_path
 from go_guidelines_lint.discovery import _normalize_target, resolve_go_files
-from go_guidelines_lint.git_filter import GitError, get_git_changed_files
+from go_guidelines_lint.git_filter import GitError, get_git_changed_files, get_git_changed_lines
 from go_guidelines_lint.guidelines_parser import parse_guidelines
 from go_guidelines_lint.models import Finding, RuleMeta, ScanResult
 from go_guidelines_lint.rules import RuleDefinition
@@ -44,24 +44,42 @@ class ScanService:
             spec.name: spec.resolve_guidelines_path(config, best_guidelines_path) for spec in self._rule_sets
         }
         files = resolve_go_files(config.target, config.include, config.exclude, cwd=cwd)
+        changed_lines_by_file: dict[Path, set[int]] = {}
         if config.git_only:
             target_path, _ = _normalize_target(config.target, cwd)
-            git_root = target_path if target_path.is_dir() else target_path.parent
+            git_anchor = target_path if target_path.is_dir() else target_path.parent
             try:
-                git_changed = get_git_changed_files(git_root)
+                git_changed = get_git_changed_files(git_anchor)
+                if config.changed_lines:
+                    changed_lines_by_file = get_git_changed_lines(git_anchor)
             except GitError as exc:
                 raise RuntimeError(str(exc)) from exc
             git_changed_set = set(git_changed)
             files = [f for f in files if f in git_changed_set]
             if not files:
-                logger.info("No changed .go files in scope for git diff HEAD. Nothing to scan.")
+                logger.info("No changed .go files in scope for the current git worktree. Nothing to scan.")
         return ScanInputs(
             cwd=cwd,
             target=config.target,
             best_guidelines_path=best_guidelines_path,
             rule_set_paths=rule_set_paths,
             files=files,
+            changed_lines_by_file=changed_lines_by_file,
         )
+
+    @staticmethod
+    def _filter_changed_line_findings(findings: list[Finding], changed_lines_by_file: dict[Path, set[int]]) -> list[Finding]:
+        filtered: list[Finding] = []
+        for finding in findings:
+            if not finding.file or (finding.file.startswith("<") and finding.file.endswith(">")):
+                continue
+            try:
+                finding_path = Path(finding.file).resolve()
+            except OSError:
+                continue
+            if finding.line in changed_lines_by_file.get(finding_path, set()):
+                filtered.append(finding)
+        return filtered
 
     def _filter_rules(self, rule_defs: list[RuleDefinition], enable: list[str], disable: list[str]) -> list[RuleDefinition]:
         return [rule for rule in rule_defs if is_rule_enabled(rule.meta.rule_id, enable, disable)]
@@ -152,7 +170,7 @@ class ScanService:
         result = ScanResult()
 
         inputs = self._build_scan_inputs(config)
-        logger.debug("Scanning %d file(s)", len(inputs.files))
+        logger.info("Scanning %d file(s)", len(inputs.files))
 
         rules, best_titles = self._load_enabled_rules(config, inputs)
         rules = self._filter_rules(rules, config.rules.enable, config.rules.disable)
@@ -173,6 +191,9 @@ class ScanService:
             result.tool_runs.extend(tool_runs)
             result.findings.extend(tool_findings)
             result.errors.extend(tool_errors)
+
+        if config.changed_lines:
+            result.findings = self._filter_changed_line_findings(result.findings, inputs.changed_lines_by_file)
 
         result.scanned_files = [to_rel(path, inputs.cwd) for path in inputs.files]
         result.findings.sort(key=lambda finding: (finding.file, finding.line, finding.column, finding.rule_id))

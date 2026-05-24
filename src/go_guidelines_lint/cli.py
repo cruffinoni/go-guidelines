@@ -63,7 +63,7 @@ def _export_completion(ctx: click.Context, param: click.Parameter, value: str | 
     type=click.Path(path_type=Path),
     default=None,
     show_default=f"{DEFAULT_CONFIG_FILE}",
-    help="Path to TOML config (expects [tool.go_guidelines]).",
+    help="Path to TOML config (expects [tool.go_guidelines]; defaults to the shared user config).",
 )
 @click.option(
     "--guidelines",
@@ -159,12 +159,32 @@ def _export_completion(ctx: click.Context, param: click.Parameter, value: str | 
     "--git",
     "git_only",
     is_flag=True,
-    default=False,
+    default=None,
     help=(
-        "Restrict scan to .go files changed per `git diff HEAD` "
-        "(staged + unstaged vs last commit). Untracked files are excluded. "
+        "Restrict scan to .go files changed in the current git worktree "
+        "(staged + unstaged + untracked). Ignored files are excluded. "
         "Fails if not inside a git repository."
     ),
+)
+@click.option(
+    "--changed-lines",
+    is_flag=True,
+    default=None,
+    help="With --git, report only findings located on added or modified lines.",
+)
+@click.option(
+    "--baseline",
+    "baseline_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Suppress findings matching a previously written gg-lint baseline JSON file.",
+)
+@click.option(
+    "--write-baseline",
+    "write_baseline_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Write current findings to a gg-lint baseline JSON file and exit zero unless runtime errors occur.",
 )
 def main(
     target: str | None,
@@ -184,7 +204,10 @@ def main(
     max_workers: int | None,
     list_guidelines_mode: bool,
     llm: str | None,
-    git_only: bool,
+    git_only: bool | None,
+    changed_lines: bool | None,
+    baseline_path: Path | None,
+    write_baseline_path: Path | None,
 ) -> None:
     """Lint Go code against guideline sets."""
 
@@ -210,6 +233,9 @@ def main(
             known_rule_ids=known_rule_ids,
             llm=llm,
             git_only=git_only,
+            changed_lines=changed_lines,
+            baseline_path=baseline_path,
+            write_baseline_path=write_baseline_path,
         )
         config = merge_cli_overrides(config, overrides)
 

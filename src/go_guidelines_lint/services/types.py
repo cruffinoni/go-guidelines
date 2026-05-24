@@ -15,3 +15,4 @@ class ScanInputs:
     best_guidelines_path: Path
     rule_set_paths: dict[str, Path]
     files: list[Path]
+    changed_lines_by_file: dict[Path, set[int]]

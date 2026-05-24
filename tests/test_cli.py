@@ -287,7 +287,7 @@ func Build(a string, b int, c bool, d float64, e []byte) error {
     payload = json.loads(output[output.find("{") :])
     messages = [finding["message"] for finding in payload["findings"]]
 
-    assert result.exit_code == 1
+    assert result.exit_code == 0
     assert any("50" in message for message in messages)
 
 
@@ -312,5 +312,7 @@ def test_cli_help_shows_default_for_max_workers() -> None:
     result = runner.invoke(main, ["--help"], catch_exceptions=False)
 
     assert result.exit_code == 0
+    assert ".gg-" in result.output
+    assert "config.toml" in result.output
     assert "--max-workers INTEGER" in result.output
     assert "[default: (6)]" in result.output

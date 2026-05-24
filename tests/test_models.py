@@ -1,10 +1,10 @@
 from go_guidelines_lint.models import Finding, RuleMeta
 
 
-def test_severity_is_derived_from_confidence_for_rulemeta_and_finding() -> None:
-    assert RuleMeta("GBP001", 1, "Imports", severity="warning", confidence="high").severity == "error"
-    assert RuleMeta("GBP002", 2, "Docs", severity="error", confidence="medium").severity == "warning"
-    assert RuleMeta("GBP005", 5, "Concurrency", severity="error", confidence="low").severity == "info"
+def test_severity_is_explicit_and_independent_from_confidence() -> None:
+    assert RuleMeta("GBP001", 1, "Imports", severity="warning", confidence="high").severity == "warning"
+    assert RuleMeta("GBP002", 2, "Docs", severity="error", confidence="medium").severity == "error"
+    assert RuleMeta("GBP005", 5, "Concurrency", severity="error", confidence="low").severity == "error"
 
     finding = Finding(
         rule_id="GBP005",
@@ -15,4 +15,4 @@ def test_severity_is_derived_from_confidence_for_rulemeta_and_finding() -> None:
         message="test",
         file="x.go",
     )
-    assert finding.severity == "info"
+    assert finding.severity == "error"

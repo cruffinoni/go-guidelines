@@ -109,7 +109,7 @@ def test_rule_010_fixture_detects_slice_json_missing_omitempty(tmp_path: Path, m
     assert len(gbp010) == 2
 
 
-def test_rule_018_is_warning_from_medium_confidence(tmp_path: Path, monkeypatch) -> None:
+def test_rule_018_keeps_explicit_info_severity(tmp_path: Path, monkeypatch) -> None:
     guideline = Path("tests/fixtures/basic/GO_BEST_PRACTICES.md").resolve()
     fixture = Path("tests/fixtures/basic/gbp018_bad.go").read_text(encoding="utf-8")
 
@@ -124,9 +124,9 @@ def test_rule_018_is_warning_from_medium_confidence(tmp_path: Path, monkeypatch)
     gbp018_findings = [finding for finding in result.findings if finding.rule_id == "GBP018"]
 
     assert gbp018_findings
-    assert all(finding.severity == "warning" for finding in gbp018_findings)
+    assert all(finding.severity == "info" for finding in gbp018_findings)
     assert has_blocking_findings(result, "error") is False
-    assert has_blocking_findings(result, "warning") is True
+    assert has_blocking_findings(result, "warning") is False
 
 
 def test_gbp010_and_gbp015_are_disabled_by_default(tmp_path: Path, monkeypatch) -> None:
@@ -200,6 +200,8 @@ func ProcessUserRequestWithManyParametersAndAVeryLongFunctionName(firstName stri
     gbp020_findings = [f for f in result.findings if f.rule_id == "GBP020"]
 
     assert gbp020_findings, "GBP020 should fire by default for long single-line signatures"
+    assert all(finding.severity == "warning" for finding in gbp020_findings)
+    assert has_blocking_findings(result, "error") is False
 
 
 def test_rule_020_multiline_signature_that_fits_single_line_does_not_fire(tmp_path: Path, monkeypatch) -> None:

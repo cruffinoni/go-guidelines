@@ -3,7 +3,7 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from go_guidelines_lint.cli import main
-from go_guidelines_lint.config import AppConfig, load_config, merge_cli_overrides
+from go_guidelines_lint.config import AppConfig, default_config_path, load_config, merge_cli_overrides
 
 
 def test_load_config_defaults_when_missing(tmp_path: Path) -> None:
@@ -18,6 +18,47 @@ def test_load_config_defaults_when_missing(tmp_path: Path) -> None:
     assert "GBP010" in config.rules.disable
     assert "GBP012" in config.rules.disable
     assert "GBP015" in config.rules.disable
+
+
+def test_load_config_defaults_when_shared_config_missing() -> None:
+    config = load_config()
+    assert isinstance(config, AppConfig)
+    assert config.target == "./..."
+    assert config.format == "text"
+    assert config.max_line_length == 120
+    assert config.max_workers == 6
+
+
+def test_load_config_reads_default_shared_config() -> None:
+    shared = default_config_path()
+    shared.parent.mkdir(parents=True, exist_ok=True)
+    shared.write_text(
+        """
+[tool.go_guidelines]
+format = "json"
+fail_on = "warning"
+max_workers = 2
+git_only = true
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_config()
+    assert config.format == "json"
+    assert config.fail_on == "warning"
+    assert config.max_workers == 2
+    assert config.git_only is True
+
+
+def test_load_config_empty_shared_file_falls_back_to_defaults() -> None:
+    shared = default_config_path()
+    shared.parent.mkdir(parents=True, exist_ok=True)
+    shared.write_text("", encoding="utf-8")
+
+    config = load_config()
+    assert config.format == "text"
+    assert config.fail_on == "error"
+    assert config.max_workers == 6
 
 
 def test_load_config_from_pyproject(tmp_path: Path) -> None:
@@ -55,6 +96,27 @@ enable = ["GBP001"]
     assert "GBP010" in config.rules.disable
     assert "GBP012" in config.rules.disable
     assert "GBP015" in config.rules.disable
+
+
+def test_load_config_explicit_path_ignores_shared_default(tmp_path: Path) -> None:
+    shared = default_config_path()
+    shared.parent.mkdir(parents=True, exist_ok=True)
+    shared.write_text('[tool.go_guidelines]\nformat = "json"\n', encoding="utf-8")
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[tool.go_guidelines]\nformat = "text"\n', encoding="utf-8")
+
+    config = load_config(pyproject)
+    assert config.format == "text"
+
+
+def test_load_config_does_not_auto_discover_local_pyproject(tmp_path: Path, monkeypatch) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[tool.go_guidelines]\nformat = "json"\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_config()
+    assert config.format == "text"
 
 
 def test_merge_cli_overrides() -> None:
@@ -157,6 +219,9 @@ def test_appconfig_defaults_for_new_fields() -> None:
     config = AppConfig()
     assert config.llm is None
     assert config.git_only is False
+    assert config.changed_lines is False
+    assert config.baseline_path is None
+    assert config.write_baseline_path is None
 
 
 def test_merge_cli_overrides_sets_llm() -> None:
@@ -177,6 +242,21 @@ def test_merge_cli_overrides_sets_git_only_true() -> None:
     assert result.git_only is True
 
 
+def test_merge_cli_overrides_sets_changed_lines_and_baseline_paths() -> None:
+    config = AppConfig(git_only=True)
+    result = merge_cli_overrides(
+        config,
+        {
+            "changed_lines": True,
+            "baseline_path": "baseline.json",
+            "write_baseline_path": "new-baseline.json",
+        },
+    )
+    assert result.changed_lines is True
+    assert result.baseline_path == "baseline.json"
+    assert result.write_baseline_path == "new-baseline.json"
+
+
 def test_merge_cli_overrides_git_only_false_does_not_swallow() -> None:
     config = merge_cli_overrides(AppConfig(), {"git_only": True})
     result = merge_cli_overrides(config, {"git_only": False})
@@ -195,3 +275,55 @@ def test_load_config_reads_git_only_from_toml(tmp_path: Path) -> None:
     toml.write_text('[tool.go_guidelines]\ngit_only = true\n', encoding="utf-8")
     config = load_config(toml)
     assert config.git_only is True
+
+
+def test_load_config_reads_changed_lines_and_baseline_from_toml(tmp_path: Path) -> None:
+    toml = tmp_path / "pyproject.toml"
+    toml.write_text(
+        '[tool.go_guidelines]\ngit_only = true\nchanged_lines = true\nbaseline_path = "baseline.json"\n',
+        encoding="utf-8",
+    )
+    config = load_config(toml)
+    assert config.changed_lines is True
+    assert config.baseline_path == "baseline.json"
+
+
+def test_changed_lines_requires_git_only(tmp_path: Path) -> None:
+    toml = tmp_path / "pyproject.toml"
+    toml.write_text('[tool.go_guidelines]\nchanged_lines = true\n', encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["--config", str(toml), "--list-guidelines"], catch_exceptions=False)
+
+    assert result.exit_code == 2
+    assert "changed_lines requires git_only" in result.output
+
+
+def test_cli_explicit_config_overrides_shared_default(tmp_path: Path) -> None:
+    shared = default_config_path()
+    shared.parent.mkdir(parents=True, exist_ok=True)
+    shared.write_text(
+        """
+[tool.go_guidelines]
+guidelines_path = "tests/fixtures/basic/GO_BEST_PRACTICES.md"
+format = "json"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        """
+[tool.go_guidelines]
+guidelines_path = "tests/fixtures/basic/GO_BEST_PRACTICES.md"
+format = "text"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["--config", str(pyproject), "--list-guidelines"], catch_exceptions=False)
+
+    assert result.exit_code == 0
+    assert "Guideline Catalog (best)" in result.output
+    assert not result.output.lstrip().startswith("{")

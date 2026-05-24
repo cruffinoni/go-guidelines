@@ -6,8 +6,10 @@ from pathlib import Path
 import logging
 import sys
 
+import click
+
 from go_guidelines_lint.config import AppConfig
-from go_guidelines_lint.git_filter import get_git_changed_files
+from go_guidelines_lint.baseline import suppress_baselined_findings, write_baseline
 from go_guidelines_lint.llm_inject import inject_llm_instructions
 from go_guidelines_lint.logging_setup import configure_logging
 from go_guidelines_lint.reporters import (
@@ -40,7 +42,10 @@ def build_overrides(
     max_workers: int | None,
     known_rule_ids: set[str],
     llm: str | None = None,
-    git_only: bool = False,
+    git_only: bool | None = None,
+    changed_lines: bool | None = None,
+    baseline_path: Path | None = None,
+    write_baseline_path: Path | None = None,
 ) -> dict[str, object]:
     """Build merge-ready override payload from click arguments."""
 
@@ -64,6 +69,9 @@ def build_overrides(
         "max_workers": max_workers,
         "llm": llm,
         "git_only": git_only,
+        "changed_lines": changed_lines,
+        "baseline_path": str(baseline_path) if baseline_path else None,
+        "write_baseline_path": str(write_baseline_path) if write_baseline_path else None,
     }
 
 
@@ -76,10 +84,13 @@ def execute(config: AppConfig, *, list_guidelines_mode: bool, stream=None) -> in
     logger.debug("Effective config: %s", config)
 
     if config.llm:
-        inject_llm_instructions(config.llm, Path.cwd())
-
-    if config.git_only:
-        get_git_changed_files(Path.cwd())
+        dir_name, filename = {"claude": (".claude", "CLAUDE.md"), "codex": (".codex", "AGENTS.md")}[config.llm]
+        target = Path.home() / dir_name / filename
+        if inject_llm_instructions(config.llm):
+            click.echo(f"gg-lint instructions written to {target}")
+        else:
+            click.echo(f"Failed to write gg-lint instructions to {target}", err=True)
+        return 0
 
     if list_guidelines_mode:
         entries = list_guidelines(config)
@@ -90,6 +101,11 @@ def execute(config: AppConfig, *, list_guidelines_mode: bool, stream=None) -> in
         return 0
 
     result = run_scan(config)
+    if not result.errors:
+        if config.write_baseline_path:
+            write_baseline(result, Path(config.write_baseline_path), Path.cwd())
+        elif config.baseline_path:
+            suppress_baselined_findings(result, Path(config.baseline_path), Path.cwd())
 
     if config.format == "json":
         render_json(result, out)
@@ -98,6 +114,8 @@ def execute(config: AppConfig, *, list_guidelines_mode: bool, stream=None) -> in
 
     if result.errors:
         return 2
+    if config.write_baseline_path:
+        return 0
     if has_blocking_findings(result, config.fail_on):
         return 1
     return 0

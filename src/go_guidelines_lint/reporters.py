@@ -43,6 +43,8 @@ def render_text(result: ScanResult, stream: TextIO) -> None:
 
     summary = result.counts_by_severity()
     summary_bits = [f"files={len(result.scanned_files)}", f"findings={len(result.findings)}", f"elapsed_ms={result.elapsed_ms}"]
+    if result.suppressed_findings:
+        summary_bits.append(f"suppressed={len(result.suppressed_findings)}")
     for severity in ["error", "warning", "info"]:
         if severity in summary:
             summary_bits.append(f"{severity}={summary[severity]}")
