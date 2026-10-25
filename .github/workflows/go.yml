@@ -13,6 +13,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  format-check:
+    name: format-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [[ -n "$unformatted" ]]; then
+            printf 'Unformatted Go files:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
   native-tests:
     name: native-tests (${{ matrix.os }})
     strategy:
@@ -26,14 +44,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Check Go formatting
-        shell: bash
-        run: |
-          unformatted=$(gofmt -l $(git ls-files '*.go'))
-          if [[ -n "$unformatted" ]]; then
-            printf 'Unformatted Go files:\n%s\n' "$unformatted"
-            exit 1
-          fi
       - name: Run Go tests
         run: go test ./...
       - name: Vet
