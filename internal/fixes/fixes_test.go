@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -82,7 +83,7 @@ func TestWriteAtomicRejectsStaleSourceWithoutOverwriting(t *testing.T) {
 	}
 }
 
-func TestWriteAtomicPreservesMode(t *testing.T) {
+func TestWriteAtomicReplacesContentAndPreservesMode(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "source.go")
 	original := []byte("old")
 	if err := os.WriteFile(path, original, 0o640); err != nil {
@@ -90,6 +91,16 @@ func TestWriteAtomicPreservesMode(t *testing.T) {
 	}
 	if err := WriteAtomic(path, original, []byte("new")); err != nil {
 		t.Fatal(err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(updated, []byte("new")) {
+		t.Fatalf("file = %q, want updated content", updated)
+	}
+	if runtime.GOOS == "windows" {
+		return // Windows exposes only the read-only bit, not POSIX permission bits.
 	}
 	info, err := os.Stat(path)
 	if err != nil {

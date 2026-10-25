@@ -234,3 +234,28 @@ func TestSelectChangedPathsAppliesTargetIncludeAndExclude(t *testing.T) {
 		t.Fatalf("selected = %v, want only pkg/a.go", got)
 	}
 }
+
+func TestSelectChangedPathsHandlesSymlinkedRepositoryRoot(t *testing.T) {
+	actualRoot := t.TempDir()
+	linkParent := t.TempDir()
+	linkedRoot := filepath.Join(linkParent, "repo")
+	if err := os.Symlink(actualRoot, linkedRoot); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWD)
+	if err := os.Chdir(actualRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := selectChangedPaths([]string{"pkg/a.go"}, linkedRoot, []string{"."}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != filepath.Join(actualRoot, "pkg", "a.go") {
+		t.Fatalf("selected = %v, want path beneath resolved root %q", got, actualRoot)
+	}
+}

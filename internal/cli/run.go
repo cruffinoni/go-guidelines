@@ -351,9 +351,17 @@ func gitChangedFiles() ([]string, string, error) {
 }
 
 func selectChangedPaths(changed []string, root string, targets, includes, excludes []string) ([]string, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Git worktree root: %w", err)
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		return nil, fmt.Errorf("resolve current directory: %w", err)
 	}
 	match := func(file, selector string) bool {
 		absolute := selector
