@@ -255,7 +255,7 @@ func TestSelectChangedPathsHandlesSymlinkedRepositoryRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0] != filepath.Join(actualRoot, "pkg", "a.go") {
-		t.Fatalf("selected = %v, want path beneath resolved root %q", got, actualRoot)
+	if len(got) != 1 || got[0] != filepath.Join(linkedRoot, "pkg", "a.go") {
+		t.Fatalf("selected = %v, want path beneath requested root %q", got, linkedRoot)
 	}
 }

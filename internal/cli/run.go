@@ -351,6 +351,7 @@ func gitChangedFiles() ([]string, string, error) {
 }
 
 func selectChangedPaths(changed []string, root string, targets, includes, excludes []string) ([]string, error) {
+	rootPath := root
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve Git worktree root: %w", err)
@@ -410,7 +411,7 @@ func selectChangedPaths(changed []string, root string, targets, includes, exclud
 			}
 		}
 		if !excluded {
-			selected = append(selected, filepath.Join(root, filepath.FromSlash(file)))
+			selected = append(selected, filepath.Join(rootPath, filepath.FromSlash(file)))
 		}
 	}
 	if len(selected) == 0 {
