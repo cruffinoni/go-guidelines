@@ -19,8 +19,13 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          TAG_CREATED: ${{ github.event.created }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)*)?$ ]]; then
+          if [[ "$TAG_CREATED" != "true" ]]; then
+            echo "Release tags must be newly created; updates to an existing tag are rejected." >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z][A-Za-z0-9-]*(\.[0-9]+)*)?$ ]]; then
             printf 'Invalid release tag %q. Expected vX.Y.Z or vX.Y.Z-<prerelease>.\n' "$RELEASE_TAG" >&2
             exit 1
           fi
@@ -199,8 +204,9 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
-          version: latest
+          version: v2.19.0
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_MAKE_LATEST: ${{ needs.validate-tag.outputs.make_latest }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
