@@ -33,3 +33,5 @@ release:
   github:
     owner: cruffinoni
     name: go-guidelines
+  prerelease: auto
+  make_latest: "{{ .Env.GORELEASER_MAKE_LATEST }}"

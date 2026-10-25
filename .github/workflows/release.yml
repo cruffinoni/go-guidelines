@@ -8,6 +8,28 @@ permissions:
   contents: read
 
 jobs:
+  validate-tag:
+    name: validate-release-tag
+    runs-on: ubuntu-latest
+    outputs:
+      make_latest: ${{ steps.validate.outputs.make_latest }}
+    steps:
+      - id: validate
+        name: Validate semantic version tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)*)?$ ]]; then
+            printf 'Invalid release tag %q. Expected vX.Y.Z or vX.Y.Z-<prerelease>.\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            echo 'make_latest=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'make_latest=true' >> "$GITHUB_OUTPUT"
+          fi
+
   format-check:
     name: format-check
     runs-on: ubuntu-latest
@@ -118,12 +140,16 @@ jobs:
           distribution: goreleaser
           version: latest
           args: check
+        env:
+          GORELEASER_MAKE_LATEST: 'false'
       - name: Build snapshot release archives
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
           args: release --snapshot --clean
+        env:
+          GORELEASER_MAKE_LATEST: 'false'
       - name: Smoke-test extracted Linux release archive
         shell: bash
         run: |
@@ -153,6 +179,7 @@ jobs:
   publish-release:
     name: publish-release
     needs:
+      - validate-tag
       - format-check
       - native-tests
       - provider-neutral-validation
@@ -176,3 +203,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_MAKE_LATEST: ${{ needs.validate-tag.outputs.make_latest }}
