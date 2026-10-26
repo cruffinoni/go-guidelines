@@ -1,4 +1,7 @@
-__pycache__/
-*.pyc
-.pytest_cache/
 .worktrees/
+dist/
+
+# Local project content not tracked by default
+/docs/
+/scripts/
+/.hermes/
