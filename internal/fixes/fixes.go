@@ -28,6 +28,20 @@ type Edit struct {
 
 var simpleVarDeclaration = regexp.MustCompile(`^var [A-Za-z_][A-Za-z0-9_]*(?:\s+(?:[A-Za-z_][A-Za-z0-9_]*|=.+))?$`)
 
+func validate(edits []Edit, sourceLen int) ([]Edit, error) {
+	ordered := append([]Edit(nil), edits...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
+	for i, edit := range ordered {
+		if edit.Start < 0 || edit.End < edit.Start || edit.End > sourceLen {
+			return nil, fmt.Errorf("invalid %s fix range [%d,%d)", edit.RuleID, edit.Start, edit.End)
+		}
+		if i > 0 && ordered[i-1].End > edit.Start {
+			return nil, errors.New("conflicting overlapping fixes")
+		}
+	}
+	return ordered, nil
+}
+
 // Plan returns non-overlapping GBP017 edits for simple adjacent top-level vars.
 // Declarations with comments, grouped syntax, or complex type expressions are
 // intentionally left untouched rather than guessed at.
@@ -121,20 +135,6 @@ func Apply(source []byte, edits []Edit) ([]byte, error) {
 		result = append(result[:edit.Start], append(append([]byte(nil), edit.After...), result[edit.End:]...)...)
 	}
 	return result, nil
-}
-
-func validate(edits []Edit, sourceLen int) ([]Edit, error) {
-	ordered := append([]Edit(nil), edits...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Start < ordered[j].Start })
-	for i, edit := range ordered {
-		if edit.Start < 0 || edit.End < edit.Start || edit.End > sourceLen {
-			return nil, fmt.Errorf("invalid %s fix range [%d,%d)", edit.RuleID, edit.Start, edit.End)
-		}
-		if i > 0 && ordered[i-1].End > edit.Start {
-			return nil, errors.New("conflicting overlapping fixes")
-		}
-	}
-	return ordered, nil
 }
 
 // WriteAtomic replaces a regular file through a same-directory temporary file
