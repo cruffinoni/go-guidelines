@@ -52,6 +52,8 @@ jobs:
         run: go build -buildvcs=false ./...
       - name: Smoke-test CLI scan
         run: go run ./cmd/gg-lint scan --fail-on=none --format=json ./cmd/gg-lint
+      - name: Lint own code with gg-lint
+        run: go run ./cmd/gg-lint scan --fail-on=error .
 
   race-tests:
     name: race-tests (ubuntu-latest)
