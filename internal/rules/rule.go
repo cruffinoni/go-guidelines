@@ -1,3 +1,4 @@
+// Package rules defines and analyzes the retained Go guideline rule portfolio.
 package rules
 
 // Severity represents how strongly a finding should affect a scan result.

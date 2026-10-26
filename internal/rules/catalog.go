@@ -13,23 +13,15 @@ type catalogRule struct {
 	severity Severity
 }
 
-func (r catalogRule) ID() string { return r.id }
-func (r catalogRule) Analyze(filename string, source []byte) ([]Finding, error) {
-	return analyzeCatalogRule(r.id, r.severity, filename, source)
-}
-
-type GBP016 struct{}
-
-func (GBP016) ID() string { return "GBP016" }
-func (GBP016) Analyze(filename string, source []byte) ([]Finding, error) {
-	return analyzeCatalogRule("GBP016", SeverityWarning, filename, source)
-}
-
-type GCM009 struct{}
-
-func (GCM009) ID() string { return "GCM009" }
-func (GCM009) Analyze(filename string, source []byte) ([]Finding, error) {
-	return analyzeCatalogRule("GCM009", SeverityInfo, filename, source)
+func ruleSeverity(id string) Severity {
+	switch id {
+	case "GBP001", "GBP003":
+		return SeverityError
+	case "GBP018", "GCM009":
+		return SeverityInfo
+	default:
+		return SeverityWarning
+	}
 }
 
 // BuiltInRules returns the retained GBP/GCM portfolio in stable display order.
@@ -49,17 +41,6 @@ func BuiltInRules() []Rule {
 		}
 	}
 	return rules
-}
-
-func ruleSeverity(id string) Severity {
-	switch id {
-	case "GBP001", "GBP003":
-		return SeverityError
-	case "GBP018", "GCM009":
-		return SeverityInfo
-	default:
-		return SeverityWarning
-	}
 }
 
 func analyzeCatalogRule(id string, severity Severity, filename string, source []byte) ([]Finding, error) {
@@ -86,6 +67,10 @@ func analyzeCatalogRule(id string, severity Severity, filename string, source []
 		return ""
 	}
 	isTest := strings.HasSuffix(filename, "_test.go")
+	if strings.HasPrefix(id, "GCM") {
+		analyzeDocumentationRule(id, file, isTest, add)
+		return findings, nil
+	}
 	switch id {
 	case "GBP002":
 		if file.Name.Name == "util" || file.Name.Name == "utils" || file.Name.Name == "common" || file.Name.Name == "helpers" {
@@ -388,7 +373,7 @@ func analyzeCatalogRule(id string, severity Severity, filename string, source []
 			return true
 		})
 	case "GBP021":
-		funcs := []*ast.FuncDecl{}
+		var funcs []*ast.FuncDecl
 		for _, d := range file.Decls {
 			if f, ok := d.(*ast.FuncDecl); ok && f.Recv == nil {
 				funcs = append(funcs, f)
@@ -436,135 +421,37 @@ func analyzeCatalogRule(id string, severity Severity, filename string, source []
 				return true
 			})
 		}
-	case "GCM001", "GCM004":
-		for _, d := range file.Decls {
-			g, ok := d.(*ast.GenDecl)
-			if !ok {
-				continue
-			}
-			for _, s := range g.Specs {
-				ts, ok := s.(*ast.TypeSpec)
-				if !ok || !ast.IsExported(ts.Name.Name) {
-					continue
-				}
-				if id == "GCM004" && !strings.HasSuffix(ts.Name.Name, "Config") {
-					continue
-				}
-				if id == "GCM001" && strings.HasSuffix(ts.Name.Name, "Config") {
-					continue
-				}
-				if ts.Doc == nil && g.Doc == nil {
-					add(ts.Pos(), "exported type is missing a documentation comment")
-				}
-			}
-		}
-	case "GCM002", "GCM003", "GCM008", "GCM009":
-		for _, d := range file.Decls {
-			f, ok := d.(*ast.FuncDecl)
-			if !ok || !ast.IsExported(f.Name.Name) {
-				continue
-			}
-			if isTest && strings.HasPrefix(f.Name.Name, "Test") {
-				continue
-			}
-			if id == "GCM003" && f.Recv == nil {
-				continue
-			}
-			if id == "GCM002" && f.Recv != nil {
-				continue
-			}
-			if id == "GCM008" && !strings.HasPrefix(f.Name.Name, "Example") {
-				continue
-			}
-			if id == "GCM008" {
-				if !hasExampleOutput(file, f) {
-					add(f.Pos(), "example function is missing an Output comment")
-				}
-				continue
-			}
-			doc := f.Doc
-			if doc == nil {
-				if id == "GCM002" || id == "GCM003" {
-					add(f.Pos(), "exported function or method is missing a documentation comment")
-				}
-				continue
-			}
-			if id == "GCM009" && tautologicalDoc(f.Name.Name, doc.Text()) {
-				add(f.Pos(), "documentation comment appears tautological and low-value")
-			}
-		}
-	case "GCM005":
-		for _, d := range file.Decls {
-			g, ok := d.(*ast.GenDecl)
-			if !ok || g.Tok != token.VAR {
-				continue
-			}
-			for _, spec := range g.Specs {
-				v, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for _, name := range v.Names {
-					if strings.HasPrefix(name.Name, "Err") && ast.IsExported(name.Name) && v.Doc == nil && g.Doc == nil {
-						add(name.Pos(), "exported error variable is missing a documentation comment")
-					}
-				}
-			}
-		}
-	case "GCM006", "GCM007":
-		max := 120
-		for _, group := range file.Comments {
-			for _, c := range group.List {
-				line := strings.TrimSpace(c.Text)
-				if id == "GCM006" && (strings.Contains(line, "**") || strings.Contains(line, "](") || strings.HasPrefix(line, "// ##")) {
-					add(c.Pos(), "avoid Markdown formatting in Go comments")
-				}
-				if id == "GCM007" && len(c.Text) > max {
-					add(c.Pos(), "comment line exceeds 120 characters")
-				}
-			}
-		}
+
 	}
 	return findings, nil
 }
 
-func hasExampleOutput(file *ast.File, example *ast.FuncDecl) bool {
-	if example.Body == nil {
-		return false
-	}
-	for _, comments := range file.Comments {
-		if comments.Pos() <= example.Body.Lbrace || comments.End() >= example.Body.Rbrace {
-			continue
-		}
-		text := comments.Text()
-		if strings.Contains(text, "Output:") || strings.Contains(text, "Unordered output:") {
-			return true
-		}
-	}
-	return false
+// ID returns the stable identifier of the catalog-backed rule.
+func (r catalogRule) ID() string { return r.id }
+
+// Analyze applies the catalog-backed rule to one source file.
+func (r catalogRule) Analyze(filename string, source []byte) ([]Finding, error) {
+	return analyzeCatalogRule(r.id, r.severity, filename, source)
 }
 
-func tautologicalDoc(name, doc string) bool {
-	text := strings.ToLower(strings.TrimSpace(doc))
-	text = strings.TrimSuffix(text, ".")
-	lowerName := strings.ToLower(name)
-	words := func(value string) string {
-		var result strings.Builder
-		for i, r := range value {
-			if i > 0 && r >= 'A' && r <= 'Z' {
-				result.WriteByte(' ')
-			}
-			result.WriteString(strings.ToLower(string(r)))
-		}
-		return result.String()
-	}
-	nameWords := words(name)
-	if text == lowerName+" returns "+nameWords || text == lowerName+" returns the "+nameWords {
-		return true
-	}
-	if strings.HasPrefix(name, "Get") {
-		target := words(name[3:])
-		return text == lowerName+" returns "+target || text == lowerName+" returns the "+target
-	}
-	return false
+// GBP016 detects package initialization that should use explicit setup.
+type GBP016 struct{}
+
+// ID returns the stable identifier of the initialization rule.
+func (GBP016) ID() string { return "GBP016" }
+
+// Analyze reports init functions in filename without modifying source.
+func (GBP016) Analyze(filename string, source []byte) ([]Finding, error) {
+	return analyzeCatalogRule("GBP016", SeverityWarning, filename, source)
+}
+
+// GCM009 detects exported documentation comments that merely restate a name.
+type GCM009 struct{}
+
+// ID returns the stable identifier of the tautological-documentation rule.
+func (GCM009) ID() string { return "GCM009" }
+
+// Analyze reports tautological documentation in filename without modifying source.
+func (GCM009) Analyze(filename string, source []byte) ([]Finding, error) {
+	return analyzeCatalogRule("GCM009", SeverityInfo, filename, source)
 }

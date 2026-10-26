@@ -11,8 +11,10 @@ import (
 // unclear. It emits one finding at the dot for every dot import in a file.
 type GBP001 struct{}
 
+// ID returns the stable identifier of the dot-import rule.
 func (GBP001) ID() string { return "GBP001" }
 
+// Analyze reports dot imports in filename without modifying source.
 func (GBP001) Analyze(filename string, source []byte) ([]Finding, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filename, source, parser.AllErrors)
