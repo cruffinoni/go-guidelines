@@ -1,0 +1,212 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tag:
+    name: validate-release-tag
+    runs-on: ubuntu-latest
+    outputs:
+      make_latest: ${{ steps.validate.outputs.make_latest }}
+    steps:
+      - id: validate
+        name: Validate semantic version tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          TAG_CREATED: ${{ github.event.created }}
+        run: |
+          if [[ "$TAG_CREATED" != "true" ]]; then
+            echo "Release tags must be newly created; updates to an existing tag are rejected." >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z][A-Za-z0-9-]*(\.[0-9]+)*)?$ ]]; then
+            printf 'Invalid release tag %q. Expected vX.Y.Z or vX.Y.Z-<prerelease>.\n' "$RELEASE_TAG" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            echo 'make_latest=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'make_latest=true' >> "$GITHUB_OUTPUT"
+          fi
+
+  format-check:
+    name: format-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [[ -n "$unformatted" ]]; then
+            printf 'Unformatted Go files:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
+  native-tests:
+    name: native-tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run Go tests
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Build all packages
+        run: go build -buildvcs=false ./...
+      - name: Smoke-test CLI scan
+        run: go run ./cmd/gg-lint scan --fail-on=none --format=json ./cmd/gg-lint
+
+  provider-neutral-validation:
+    name: provider-neutral-validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run tests, vet, build, and cross-compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./...
+          go vet ./...
+          go build -buildvcs=false ./...
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            GOOS=${target%/*} GOARCH=${target#*/} go build -buildvcs=false -o "$RUNNER_TEMP/gg-lint-${target%/*}-${target#*/}" ./cmd/gg-lint
+          done
+      - name: Smoke-test CLI and changed-file scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          go build -buildvcs=false -o "$tmp/gg-lint" ./cmd/gg-lint
+          mkdir -p "$tmp/project/pkg"
+          printf 'package pkg\nimport . "fmt"\n' > "$tmp/project/pkg/bad.go"
+          printf 'package pkg\n' > "$tmp/project/pkg/ok.go"
+          (
+            cd "$tmp/project"
+            set +e
+            "$tmp/gg-lint" scan . > "$tmp/full.txt"
+            status=$?
+            set -e
+            test "$status" -eq 1
+            grep -q 'GBP001' "$tmp/full.txt"
+            set +e
+            "$tmp/gg-lint" scan --format=json . > "$tmp/full.json"
+            status=$?
+            set -e
+            test "$status" -eq 1
+            grep -q '"scanned_files":2' "$tmp/full.json"
+            git init -q
+            git config user.email validate@example.invalid
+            git config user.name validate
+            printf '%s\n' 'pkg/ok.go' > .gitignore
+            git add .gitignore pkg/bad.go
+            set +e
+            "$tmp/gg-lint" scan --changed-files --format=json . > "$tmp/changed.json"
+            status=$?
+            set -e
+            test "$status" -eq 1
+            grep -q '"scanned_files":1' "$tmp/changed.json"
+            "$tmp/gg-lint" sync-instructions --provider claude > /dev/null
+            test -f CLAUDE.md
+            test ! -e AGENTS.md
+            set +e
+            "$tmp/gg-lint" scan . > /dev/null
+            status=$?
+            set -e
+            test "$status" -eq 1
+            test ! -e AGENTS.md
+          )
+      - name: Validate GoReleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: check
+        env:
+          GORELEASER_MAKE_LATEST: 'false'
+      - name: Build snapshot release archives
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --snapshot --clean
+        env:
+          GORELEASER_MAKE_LATEST: 'false'
+      - name: Smoke-test extracted Linux release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=$(find dist -type f -name 'gg-lint_*_linux_amd64.tar.gz' -print -quit)
+          test -n "$archive"
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          tar -xzf "$archive" -C "$tmp"
+          mkdir -p "$tmp/project"
+          printf 'package smoke\n' > "$tmp/project/smoke.go"
+          "$tmp/gg-lint" scan --fail-on=none --format=json "$tmp/project" > "$tmp/report.json"
+          grep -q '"scanned_files":1' "$tmp/report.json"
+
+  race-tests:
+    name: race-tests (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run race-enabled tests
+        run: go test -race -cover ./...
+
+  publish-release:
+    name: publish-release
+    needs:
+      - validate-tag
+      - format-check
+      - native-tests
+      - provider-neutral-validation
+      - race-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Publish release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_MAKE_LATEST: ${{ needs.validate-tag.outputs.make_latest }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
