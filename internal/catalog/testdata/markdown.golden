@@ -1,0 +1,19 @@
+# gg-lint rules
+
+| ID | Name | Severity | Summary |
+| --- | --- | --- | --- |
+| R1 | no-dot-imports | warning | flags dot imports |
+| R2 | require-package-doc | error | requires a package doc comment |
+
+## R1: no-dot-imports
+
+Severity: warning
+
+Dot imports pollute the namespace and hide where a name comes from.
+
+## R2: require-package-doc
+
+Severity: error
+
+Every package needs a leading doc comment describing its purpose.
+
