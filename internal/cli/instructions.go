@@ -44,47 +44,6 @@ func instructionTarget(provider string) (instructionMarkers, error) {
 	}
 }
 
-// syncInstructions updates only the selected provider's repository-root file.
-// Marker lines are intentionally unique and form one bounded, replaceable block.
-func syncInstructions(root, provider string, writeFile func(string, []byte, os.FileMode) error) ([]string, error) {
-	target, err := instructionTarget(provider)
-	if err != nil {
-		return nil, err
-	}
-	path := filepath.Join(root, target.filename)
-	mode := fs.FileMode(0o644)
-	original := []byte(nil)
-	info, err := os.Lstat(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("inspect project instruction file %s: %w", path, err)
-	}
-	if err == nil {
-		if info.Mode()&fs.ModeSymlink != 0 {
-			return nil, fmt.Errorf("refusing to update project instruction file %s: target is a symlink", path)
-		}
-		mode = info.Mode().Perm()
-		original, err = os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read project instruction file %s: %w", path, err)
-		}
-	}
-
-	updated, changed, err := renderInstructionFile(original, target)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", target.filename, err)
-	}
-	if !changed {
-		return nil, nil
-	}
-	if writeFile == nil {
-		writeFile = os.WriteFile
-	}
-	if err := writeFile(path, updated, mode); err != nil {
-		return nil, fmt.Errorf("write project instruction file %s: %w", path, err)
-	}
-	return []string{path}, nil
-}
-
 func markerIsStandaloneLine(source []byte, marker string, offset int) bool {
 	if offset > 0 && source[offset-1] != '\n' {
 		return false
@@ -146,4 +105,45 @@ func renderInstructionFile(original []byte, target instructionMarkers) ([]byte, 
 		return original, false, nil
 	}
 	return updated, true, nil
+}
+
+// syncInstructions updates only the selected provider's repository-root file.
+// Marker lines are intentionally unique and form one bounded, replaceable block.
+func syncInstructions(root, provider string, writeFile func(string, []byte, os.FileMode) error) ([]string, error) {
+	target, err := instructionTarget(provider)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(root, target.filename)
+	mode := fs.FileMode(0o644)
+	original := []byte(nil)
+	info, err := os.Lstat(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("inspect project instruction file %s: %w", path, err)
+	}
+	if err == nil {
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return nil, fmt.Errorf("refusing to update project instruction file %s: target is a symlink", path)
+		}
+		mode = info.Mode().Perm()
+		original, err = os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read project instruction file %s: %w", path, err)
+		}
+	}
+
+	updated, changed, err := renderInstructionFile(original, target)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", target.filename, err)
+	}
+	if !changed {
+		return nil, nil
+	}
+	if writeFile == nil {
+		writeFile = os.WriteFile
+	}
+	if err := writeFile(path, updated, mode); err != nil {
+		return nil, fmt.Errorf("write project instruction file %s: %w", path, err)
+	}
+	return []string{path}, nil
 }

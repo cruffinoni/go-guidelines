@@ -1,14 +1,16 @@
+// Package cli implements command-line configuration and scan workflows.
 package cli
 
 import (
 	"bufio"
 	"fmt"
-	"github.com/cruffinoni/go-guidelines/internal/rules"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/cruffinoni/go-guidelines/internal/rules"
 )
 
 type scanConfig struct {
