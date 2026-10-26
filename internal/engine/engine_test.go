@@ -125,11 +125,15 @@ func newScope(t *testing.T, paths, include, exclude []string) *scope.Set {
 	return s
 }
 
+// abs returns path in the canonical form the engine reports: absolute and
+// symlink-free, so tests pass when the repo lives under a symlink.
 func abs(t *testing.T, path string) string {
 	t.Helper()
 	a, err := filepath.Abs(path)
 	require.NoError(t, err)
-	return a
+	resolved, err := filepath.EvalSymlinks(a)
+	require.NoError(t, err)
+	return resolved
 }
 
 func TestNew_SelectsRulesByCondition(t *testing.T) {
