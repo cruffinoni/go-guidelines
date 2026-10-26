@@ -1,6 +1,6 @@
 # Go binary versioning and releases
 
-This document defines releases for the Go `gg-lint` binary. The repository still contains a Python package; its `pyproject.toml` and Python `__version__` are **not** the source of truth for Go binary releases and are not changed by `scripts/bump-release-version.sh`.
+This document defines releases for the Go `gg-lint` binary. Git tags are the source of truth for binary releases.
 
 ## Version classes
 
@@ -12,29 +12,30 @@ Every unique, valid version tag pushed to `origin` triggers a GitHub Release aft
 
 The label comes before the counter: both `v2.4.0-alpha.1` and `v2.4.0-alpha.2` are prereleases of the `2.4.0` line. The stable promotion is `v2.4.0`, not `v2.4.1`.
 
-## Lifecycle and bump commands
+## Lifecycle and manual tag creation
 
-The project-owned `scripts/bump-release-version.sh` uses dry-run mode by default. It manages tags only: it never edits source files, Python package metadata, or changelogs. The shared `~/bin/bump-version.sh` is not modified or used for this release path.
+The repository no longer ships a local tag-bump helper. Choose a valid, unused tag manually; the release workflow validates new tags and publishes only after all required checks pass.
 
-From stable `v2.4.0`, start the next patch's alpha series:
-
-```bash
-scripts/bump-release-version.sh patch --pre alpha
-scripts/bump-release-version.sh patch --pre alpha --commit --push
-```
-
-The first command previews; the second applies the annotated tag and pushes it. Once `v2.4.1-alpha.1` exists, the same preview/apply form with `--pre alpha` continues the same core at `v2.4.1-alpha.2`. Changing the label on the same core starts the new label at `.1`, e.g. `v2.4.1-beta.1`.
-
-Promote the latest prerelease core to stable with:
+For example, after stable `v2.4.0`, create and push the first alpha tag for the next patch:
 
 ```bash
-scripts/bump-release-version.sh stable
-scripts/bump-release-version.sh stable --commit --push
+git tag --list 'v*' --sort=-version:refname
+git tag -a v2.4.1-alpha.1 -m "Release v2.4.1-alpha.1"
+git push origin HEAD
+git push origin v2.4.1-alpha.1
 ```
 
-This turns `v2.4.1-rc.1` into `v2.4.1`; it does not increment the core. To start a new prerelease after stable `v2.4.1`, use `patch --pre alpha` (next patch), `minor --pre alpha`, or `major --pre alpha`.
+Each prerelease tag is a distinct version. Continue the same alpha series with `v2.4.1-alpha.2`; changing the label on the same core starts the new label at `.1`, e.g. `v2.4.1-beta.1`.
 
-`--commit` means apply the tag operation; the tool does not create a source commit. `--push` pushes the current `HEAD` and the new tag. The tag push triggers the release workflow. Do not push a tag that has already been published; if a release fails, repair the workflow/configuration and use a new version rather than reusing a public version tag.
+Promote the latest prerelease core to stable by creating its unsuffixed tag. For example:
+
+```bash
+git tag -a v2.4.1 -m "Release v2.4.1"
+git push origin HEAD
+git push origin v2.4.1
+```
+
+This promotes `v2.4.1-rc.1` to `v2.4.1`; it does not increment the core. After stable `v2.4.1`, the next patch, minor, or major prerelease should use the corresponding next core. Never reuse a published tag; if a release fails, repair the workflow/configuration and use a new version.
 
 ## CI and publishing behavior
 
@@ -43,7 +44,3 @@ This turns `v2.4.1-rc.1` into `v2.4.1`; it does not increment the core. To start
 `.goreleaser.yaml` sets `release.prerelease: auto`, so a tag suffix such as `-alpha.1` is published as a prerelease. Stable tags have no suffix. `release.make_latest: true` allows stable releases to become latest; GitHub does not allow a release marked prerelease to be latest. Stable tags should be published monotonically; verify the actual `latest` pointer after the first real release.
 
 GoReleaser injects the tag version, commit, and build time into the Go CLI. The executable's `gg-lint version` output should therefore match the release tag (without the leading `v`).
-
-## Python metadata boundary
-
-The project-owned Go release tag tool has no metadata synchronization path. The Python package remains present in the repository, but its independent release lifecycle is not defined here. Do not synchronize its version fields as a side effect of a Go binary release.
