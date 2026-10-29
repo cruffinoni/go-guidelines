@@ -26,8 +26,9 @@ func (PackageDocAndNaming) Meta() lint.Meta {
 }
 
 // Check reports vague package names and missing package docs in pass, once
-// per package, at the package clause of its first non-test file. Test files
-// are ignored, so an external test package reports nothing.
+// per package, at the package clause of its first non-test, non-generated
+// file. Test files are ignored, so an external test package reports
+// nothing; a generated file's package doc still documents the package.
 func (PackageDocAndNaming) Check(pass *lint.Pass) error {
 	var first *ast.File
 	documented := false
@@ -35,7 +36,7 @@ func (PackageDocAndNaming) Check(pass *lint.Pass) error {
 		if pass.IsTestFile(file) {
 			continue
 		}
-		if first == nil {
+		if first == nil && !ast.IsGenerated(file) {
 			first = file
 		}
 		documented = documented || file.Doc != nil
