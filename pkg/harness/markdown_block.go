@@ -82,19 +82,19 @@ func (m markdownBlock) render(original []byte, instructions string) ([]byte, boo
 	text := string(original)
 	startCount, endCount := strings.Count(text, start), strings.Count(text, end)
 	if startCount != endCount || startCount > 1 {
-		return nil, false, fmt.Errorf("malformed managed instruction markers (expected either no markers or one %q and one %q); remove or repair the marker lines manually", start, end)
+		return nil, false, fmt.Errorf("malformed managed instruction markers: want no markers or one %q and one %q", start, end)
 	}
 
 	var startPos, endPos int
 	if startCount == 1 {
 		startPos, endPos = strings.Index(text, start), strings.Index(text, end)
 		if !markerIsStandaloneLine(original, start, startPos) || !markerIsStandaloneLine(original, end, endPos) {
-			return nil, false, fmt.Errorf("malformed managed instruction markers: each marker must occupy its own line; move or repair the marker lines manually")
+			return nil, false, errors.New("malformed managed instruction markers: each marker must occupy its own line")
 		}
 	}
 	for _, match := range anyMarkerPattern.FindAllString(text, -1) {
 		if match != start && match != end {
-			return nil, false, fmt.Errorf("malformed managed instruction markers (found marker for another harness %q); remove or repair the marker lines manually", match)
+			return nil, false, fmt.Errorf("malformed managed instruction markers: found marker for another harness %q", match)
 		}
 	}
 
@@ -118,7 +118,7 @@ func (m markdownBlock) render(original []byte, instructions string) ([]byte, boo
 	}
 
 	if startPos > endPos {
-		return nil, false, fmt.Errorf("malformed managed instruction markers: end marker appears before start marker; reorder or remove the marker lines manually")
+		return nil, false, errors.New("malformed managed instruction markers: end marker appears before start marker")
 	}
 	endPos += len(end)
 	updated := make([]byte, 0, len(original)-(endPos-startPos)+len(block))
