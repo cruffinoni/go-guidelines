@@ -46,7 +46,7 @@ func writeFile(t *testing.T, name, content string) {
 }
 
 func TestLoad_FilesAndTestVariants(t *testing.T) {
-	pkgs, err := loader.Load(context.Background(), loader.Config{Tests: true}, "testdata/mod")
+	pkgs, err := loader.Load(t.Context(), loader.Config{Tests: true}, "testdata/mod")
 	require.NoError(t, err)
 
 	want := []string{
@@ -76,13 +76,13 @@ func TestLoad_FilesAndTestVariants(t *testing.T) {
 }
 
 func TestLoad_BuildTagExcludesFile(t *testing.T) {
-	pkgs, err := loader.Load(context.Background(), loader.Config{Tests: true}, "testdata/mod")
+	pkgs, err := loader.Load(t.Context(), loader.Config{Tests: true}, "testdata/mod")
 	require.NoError(t, err)
 	assert.NotContains(t, allFiles(pkgs), abs(t, "testdata/mod/excluded.go"))
 }
 
 func TestLoad_NeedsTypesFalse(t *testing.T) {
-	pkgs, err := loader.Load(context.Background(), loader.Config{}, "testdata/mod")
+	pkgs, err := loader.Load(t.Context(), loader.Config{}, "testdata/mod")
 	require.NoError(t, err)
 	require.NotEmpty(t, pkgs)
 	for _, pkg := range pkgs {
@@ -92,7 +92,7 @@ func TestLoad_NeedsTypesFalse(t *testing.T) {
 }
 
 func TestLoad_NeedsTypesTrue(t *testing.T) {
-	pkgs, err := loader.Load(context.Background(), loader.Config{NeedsTypes: true}, "testdata/mod")
+	pkgs, err := loader.Load(t.Context(), loader.Config{NeedsTypes: true}, "testdata/mod")
 	require.NoError(t, err)
 	require.NotEmpty(t, pkgs)
 	for _, pkg := range pkgs {
@@ -102,7 +102,7 @@ func TestLoad_NeedsTypesTrue(t *testing.T) {
 }
 
 func TestLoad_TypeErrorIsKeptNotFatal(t *testing.T) {
-	pkgs, err := loader.Load(context.Background(), loader.Config{NeedsTypes: true}, "testdata/typeerr")
+	pkgs, err := loader.Load(t.Context(), loader.Config{NeedsTypes: true}, "testdata/typeerr")
 	require.NoError(t, err)
 
 	var found bool
@@ -120,13 +120,13 @@ func TestLoad_ParseErrorIsFatal(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "go.mod"), "module example.test/parseerr\n\ngo 1.27\n")
 	writeFile(t, filepath.Join(dir, "bad.go"), "package parseerr\n\nfunc Bad( {\n")
 
-	_, err := loader.Load(context.Background(), loader.Config{}, dir)
+	_, err := loader.Load(t.Context(), loader.Config{}, dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad.go")
 }
 
 func TestLoad_SingleFile(t *testing.T) {
-	pkgs, err := loader.Load(context.Background(), loader.Config{}, "testdata/mod/pkga/a.go")
+	pkgs, err := loader.Load(t.Context(), loader.Config{}, "testdata/mod/pkga/a.go")
 	require.NoError(t, err)
 	assert.Equal(t, []string{abs(t, "testdata/mod/pkga/a.go")}, allFiles(pkgs))
 }
@@ -136,7 +136,7 @@ func TestLoad_FileOutsideModule(t *testing.T) {
 	file := filepath.Join(dir, "foo.go")
 	writeFile(t, file, "package foo\n\nfunc Bar() int { return 1 }\n")
 
-	pkgs, err := loader.Load(context.Background(), loader.Config{}, file)
+	pkgs, err := loader.Load(t.Context(), loader.Config{}, file)
 	require.NoError(t, err)
 	assert.Contains(t, allFiles(pkgs), file)
 	assert.Len(t, pkgs, 1)
@@ -146,7 +146,7 @@ func TestLoad_DirOutsideModuleIsAnError(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "foo.go"), "package foo\n")
 
-	_, err := loader.Load(context.Background(), loader.Config{}, dir)
+	_, err := loader.Load(t.Context(), loader.Config{}, dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "outside any Go module")
 }
@@ -158,15 +158,15 @@ func TestLoad_FilesOutsideModulesInDifferentDirsAreAllKept(t *testing.T) {
 	writeFile(t, a, "package a\n")
 	writeFile(t, b, "package b\n")
 
-	pkgs, err := loader.Load(context.Background(), loader.Config{Tests: true}, a, b)
+	pkgs, err := loader.Load(t.Context(), loader.Config{Tests: true}, a, b)
 	require.NoError(t, err)
 	assert.Equal(t, []string{a, b}, allFiles(pkgs))
 }
 
 func TestLoad_OverlappingInputsDedupe(t *testing.T) {
-	dirPkgs, err := loader.Load(context.Background(), loader.Config{}, "testdata/mod/pkga")
+	dirPkgs, err := loader.Load(t.Context(), loader.Config{}, "testdata/mod/pkga")
 	require.NoError(t, err)
-	bothPkgs, err := loader.Load(context.Background(), loader.Config{}, "testdata/mod/pkga", "testdata/mod/pkga/a.go")
+	bothPkgs, err := loader.Load(t.Context(), loader.Config{}, "testdata/mod/pkga", "testdata/mod/pkga/a.go")
 	require.NoError(t, err)
 
 	assert.Equal(t, allFiles(dirPkgs), allFiles(bothPkgs))
@@ -174,7 +174,7 @@ func TestLoad_OverlappingInputsDedupe(t *testing.T) {
 }
 
 func TestLoad_SourcesAreExactBytes(t *testing.T) {
-	pkgs, err := loader.Load(context.Background(), loader.Config{}, "testdata/mod/pkga/a.go")
+	pkgs, err := loader.Load(t.Context(), loader.Config{}, "testdata/mod/pkga/a.go")
 	require.NoError(t, err)
 	require.Len(t, pkgs, 1)
 	require.Len(t, pkgs[0].GoFiles, 1)
@@ -185,13 +185,13 @@ func TestLoad_SourcesAreExactBytes(t *testing.T) {
 }
 
 func TestLoad_EmptyPaths(t *testing.T) {
-	pkgs, err := loader.Load(context.Background(), loader.Config{})
+	pkgs, err := loader.Load(t.Context(), loader.Config{})
 	require.NoError(t, err)
 	assert.Empty(t, pkgs)
 }
 
 func TestLoad_CanceledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	_, err := loader.Load(ctx, loader.Config{}, "testdata/mod")
