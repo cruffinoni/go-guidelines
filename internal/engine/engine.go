@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"go/ast"
 	"runtime"
 	"slices"
 
@@ -28,6 +29,8 @@ type Options struct {
 // Result is the deterministic outcome of a Check.
 type Result struct {
 	// Files lists every in-scope analyzed file, absolute and sorted.
+	// Generated files are loaded for type checking but never listed or
+	// reported on.
 	Files []string
 	// Findings is sorted with [lint.CompareFindings] and de-duplicated.
 	Findings []lint.Finding
@@ -62,6 +65,18 @@ func (e *Engine) Rules() []lint.Rule {
 	return slices.Clone(e.rules)
 }
 
+// generatedFiles returns the names of pkg's files marked as generated, as
+// defined by [ast.IsGenerated].
+func generatedFiles(pkg *loader.Package) map[string]struct{} {
+	generated := make(map[string]struct{})
+	for _, f := range pkg.Syntax {
+		if ast.IsGenerated(f) {
+			generated[pkg.Fset.File(f.FileStart).Name()] = struct{}{}
+		}
+	}
+	return generated
+}
+
 // Check loads the packages under s and runs the Engine's rules against
 // them. The returned error joins every operational failure; Result is
 // populated even when it is non-nil, and Files is populated even when no
@@ -80,7 +95,11 @@ func (e *Engine) Check(ctx context.Context, s *scope.Set) (Result, error) {
 		for _, te := range pkg.TypeErrors {
 			typeErrs = append(typeErrs, fmt.Errorf("%s: %w", pkg.ID, te))
 		}
+		generated := generatedFiles(pkg)
 		for _, f := range pkg.GoFiles {
+			if _, ok := generated[f]; ok {
+				continue
+			}
 			if s.Contains(f) {
 				inScope[f] = struct{}{}
 			}

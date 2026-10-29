@@ -52,6 +52,8 @@ Scanning a directory requires it to be inside a Go module (a `go.mod` in that
 directory or an ancestor); a single `.go` file can be scanned without one.
 Directory scans follow `go build ./...` semantics: files excluded by build
 tags, `testdata/` directories, and `.`/`_`-prefixed directories are skipped.
+Files marked `// Code generated … DO NOT EDIT.` are loaded for type checking
+but never reported on or counted as scanned.
 
 Run the Go checks with `go test ./...`, `go vet ./...`, and `go build -buildvcs=false ./...`. GitHub Actions also runs native Linux, macOS, and Windows tests.
 

@@ -310,3 +310,19 @@ func TestCheck_ConcurrencyStress(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, res.Findings)
 }
+
+func TestCheck_GeneratedFilesAreNotReported(t *testing.T) {
+	cat := newCatalog(t, fileCountRule("R1"))
+	e := engine.New(cat, engine.Options{})
+	s := newScope(t, []string{"testdata/mod"}, nil)
+
+	res, err := e.Check(t.Context(), s)
+	require.NoError(t, err)
+
+	generated := abs(t, "testdata/mod/gen.go")
+	assert.NotContains(t, res.Files, generated)
+	assert.Contains(t, res.Files, abs(t, "testdata/mod/a.go"))
+	for _, f := range res.Findings {
+		assert.NotEqual(t, generated, f.File)
+	}
+}
