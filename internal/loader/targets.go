@@ -21,6 +21,20 @@ type dirGroup struct {
 	targets []target
 }
 
+// findModuleRoot walks up from dir looking for a go.mod file.
+func findModuleRoot(dir string) (string, bool) {
+	for {
+		if fi, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && !fi.IsDir() {
+			return dir, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
 // groupByDir resolves paths and groups them by the module root enclosing
 // them (or, for .go files outside any module, by their own directory), so
 // that Load issues one packages.Load call per group.
@@ -70,23 +84,9 @@ func groupByDir(paths []string) ([]dirGroup, error) {
 	return groups, nil
 }
 
-// findModuleRoot walks up from dir looking for a go.mod file.
-func findModuleRoot(dir string) (string, bool) {
-	for {
-		if fi, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && !fi.IsDir() {
-			return dir, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", false
-		}
-		dir = parent
-	}
-}
-
-// buildPatterns turns g's targets into go/packages patterns relative to
-// g.dir, deduplicated and in a stable order.
-func buildPatterns(g dirGroup) []string {
+// patterns turns g's targets into go/packages patterns relative to g.dir,
+// deduplicated and in a stable order.
+func (g dirGroup) patterns() []string {
 	seen := make(map[string]struct{}, len(g.targets))
 	var out []string
 	add := func(s string) {

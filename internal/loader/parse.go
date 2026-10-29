@@ -24,12 +24,10 @@ func (s *sourceStore) put(filename string, src []byte) {
 	s.mu.Unlock()
 }
 
-// parseFile returns a packages.Config.ParseFile hook that parses with
-// go/parser and records each file's source bytes in store as a side effect.
-func parseFile(store *sourceStore) func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
-	return func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
-		f, err := parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments|parser.SkipObjectResolution)
-		store.put(filename, src)
-		return f, err
-	}
+// parseFile is a packages.Config.ParseFile hook that parses with go/parser
+// and records each file's source bytes in s as a side effect.
+func (s *sourceStore) parseFile(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+	f, err := parser.ParseFile(fset, filename, src, parser.AllErrors|parser.ParseComments|parser.SkipObjectResolution)
+	s.put(filename, src)
+	return f, err
 }

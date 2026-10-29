@@ -5,6 +5,15 @@ import (
 	"strings"
 )
 
+// canonicalize resolves symlinks in an already-absolute path, falling back
+// to the cleaned path if that fails (e.g. the path does not exist).
+func canonicalize(abs string) string {
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return filepath.Clean(abs)
+}
+
 // canonicalAbs resolves path to an absolute, symlink-free form, so that
 // inputs, selectors, and the filenames Contains checks all compare equal
 // regardless of how each was spelled (e.g. macOS /var vs /private/var).
@@ -14,15 +23,6 @@ func canonicalAbs(path string) (string, error) {
 		return "", err
 	}
 	return canonicalize(abs), nil
-}
-
-// canonicalize resolves symlinks in an already-absolute path, falling back
-// to the cleaned path if that fails (e.g. the path does not exist).
-func canonicalize(abs string) string {
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved
-	}
-	return filepath.Clean(abs)
 }
 
 // under reports whether target names base itself or a descendant of it,

@@ -18,6 +18,14 @@ import (
 // worktree.
 var ErrNotRepository = errors.New("not a git repository")
 
+// gitOutput runs a Git subcommand with dir as its working directory and
+// returns its standard output.
+func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	return cmd.Output()
+}
+
 // Root returns the top-level directory of the Git worktree containing dir.
 // It wraps ErrNotRepository, with the underlying Git error as cause, when
 // dir is not inside a worktree.
@@ -70,12 +78,4 @@ func ChangedFiles(ctx context.Context, root string) ([]string, error) {
 	}
 	slices.Sort(result)
 	return result, nil
-}
-
-// gitOutput runs a Git subcommand with dir as its working directory and
-// returns its standard output.
-func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = dir
-	return cmd.Output()
 }

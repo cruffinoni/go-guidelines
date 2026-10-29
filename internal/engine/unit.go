@@ -35,9 +35,19 @@ func newTarget(pkg *loader.Package, inScope map[string]struct{}) target {
 	return target{id: pkg.ID, base: base, inScope: kept}
 }
 
-// runUnit checks one package against one rule, isolating panics and
-// filtering diagnostics down to in-scope findings.
-func runUnit(t target, rule lint.Rule) ([]lint.Finding, error) {
+// check runs rule.Check, turning a panic into an error carrying its stack.
+func check(rule lint.Rule, pass *lint.Pass) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return rule.Check(pass)
+}
+
+// run checks t against one rule, isolating panics and filtering
+// diagnostics down to in-scope findings.
+func (t target) run(rule lint.Rule) ([]lint.Finding, error) {
 	meta := rule.Meta()
 
 	pass := *t.base
@@ -69,14 +79,4 @@ func runUnit(t target, rule lint.Rule) ([]lint.Finding, error) {
 		findings = append(findings, lint.NewFinding(meta, fset, d))
 	}
 	return findings, errors.Join(errs...)
-}
-
-// check runs rule.Check, turning a panic into an error carrying its stack.
-func check(rule lint.Rule, pass *lint.Pass) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("panic: %v\n%s", r, debug.Stack())
-		}
-	}()
-	return rule.Check(pass)
 }

@@ -31,70 +31,18 @@ import (
 	"github.com/cruffinoni/go-guidelines/internal/lint"
 )
 
-// Run checks rule against every .go file in dir and reports each mismatch
-// between findings and want comments as a test error.
-func Run(t testing.TB, rule lint.Rule, dir string) {
-	t.Helper()
-	problems, err := check(rule, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range problems {
-		t.Error(p)
-	}
-}
-
 type position struct {
 	file string
 	line int
 }
 
+func (p position) compare(q position) int {
+	return cmp.Or(strings.Compare(p.file, q.file), cmp.Compare(p.line, q.line))
+}
+
 type expectation struct {
 	re      *regexp.Regexp
 	matched bool
-}
-
-func check(rule lint.Rule, dir string) ([]string, error) {
-	fset := token.NewFileSet()
-	pkgFiles, sources, err := parseDir(fset, dir)
-	if err != nil {
-		return nil, err
-	}
-	wants, err := collectWants(fset, pkgFiles)
-	if err != nil {
-		return nil, err
-	}
-
-	meta := rule.Meta()
-	var problems []string
-	for _, files := range pkgFiles {
-		var diagnostics []lint.Diagnostic
-		pass := lint.NewPass(fset, files, sources, func(d lint.Diagnostic) { diagnostics = append(diagnostics, d) })
-		if meta.NeedsTypes {
-			typeCheck(fset, files, pass)
-		}
-		if err := rule.Check(pass); err != nil {
-			return nil, fmt.Errorf("rule %s: %w", meta.ID, err)
-		}
-		for _, d := range diagnostics {
-			p := fset.Position(d.Pos)
-			if !consume(wants[position{p.Filename, p.Line}], d.Message) {
-				problems = append(problems, fmt.Sprintf("%s:%d:%d: unexpected finding %q", p.Filename, p.Line, p.Column, d.Message))
-			}
-		}
-	}
-	for _, pos := range slices.SortedFunc(maps.Keys(wants), comparePositions) {
-		for _, w := range wants[pos] {
-			if !w.matched {
-				problems = append(problems, fmt.Sprintf("%s:%d: no finding matching %q", pos.file, pos.line, w.re))
-			}
-		}
-	}
-	return problems, nil
-}
-
-func comparePositions(a, b position) int {
-	return cmp.Or(strings.Compare(a.file, b.file), cmp.Compare(a.line, b.line))
 }
 
 func consume(wants []*expectation, message string) bool {
@@ -141,6 +89,30 @@ func parseDir(fset *token.FileSet, dir string) ([][]*ast.File, map[string][]byte
 	return pkgFiles, sources, nil
 }
 
+func parsePatterns(text string) ([]*regexp.Regexp, error) {
+	var res []*regexp.Regexp
+	for text = strings.TrimSpace(text); text != ""; text = strings.TrimSpace(text) {
+		quoted, err := strconv.QuotedPrefix(text)
+		if err != nil {
+			return nil, fmt.Errorf("want: expected quoted regexp at %q", text)
+		}
+		text = text[len(quoted):]
+		pattern, err := strconv.Unquote(quoted)
+		if err != nil {
+			return nil, fmt.Errorf("want: %w", err)
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("want: %w", err)
+		}
+		res = append(res, re)
+	}
+	if len(res) == 0 {
+		return nil, errors.New("want: no patterns")
+	}
+	return res, nil
+}
+
 func collectWants(fset *token.FileSet, pkgFiles [][]*ast.File) (map[position][]*expectation, error) {
 	wants := make(map[position][]*expectation)
 	for _, files := range pkgFiles {
@@ -167,30 +139,6 @@ func collectWants(fset *token.FileSet, pkgFiles [][]*ast.File) (map[position][]*
 	return wants, nil
 }
 
-func parsePatterns(text string) ([]*regexp.Regexp, error) {
-	var res []*regexp.Regexp
-	for text = strings.TrimSpace(text); text != ""; text = strings.TrimSpace(text) {
-		quoted, err := strconv.QuotedPrefix(text)
-		if err != nil {
-			return nil, fmt.Errorf("want: expected quoted regexp at %q", text)
-		}
-		text = text[len(quoted):]
-		pattern, err := strconv.Unquote(quoted)
-		if err != nil {
-			return nil, fmt.Errorf("want: %w", err)
-		}
-		re, err := regexp.Compile(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("want: %w", err)
-		}
-		res = append(res, re)
-	}
-	if len(res) == 0 {
-		return nil, errors.New("want: no patterns")
-	}
-	return res, nil
-}
-
 // typeCheck fills the Pass type fields; errors are recorded, not fatal, as in
 // the engine.
 func typeCheck(fset *token.FileSet, files []*ast.File, pass *lint.Pass) {
@@ -213,4 +161,56 @@ func typeCheck(fset *token.FileSet, files []*ast.File, pass *lint.Pass) {
 	pass.Pkg, _ = conf.Check(files[0].Name.Name, fset, files, info)
 	pass.TypesInfo = info
 	pass.TypesSizes = types.SizesFor("gc", runtime.GOARCH)
+}
+
+func check(rule lint.Rule, dir string) ([]string, error) {
+	fset := token.NewFileSet()
+	pkgFiles, sources, err := parseDir(fset, dir)
+	if err != nil {
+		return nil, err
+	}
+	wants, err := collectWants(fset, pkgFiles)
+	if err != nil {
+		return nil, err
+	}
+
+	meta := rule.Meta()
+	var problems []string
+	for _, files := range pkgFiles {
+		var diagnostics []lint.Diagnostic
+		pass := lint.NewPass(fset, files, sources, func(d lint.Diagnostic) { diagnostics = append(diagnostics, d) })
+		if meta.NeedsTypes {
+			typeCheck(fset, files, pass)
+		}
+		if err := rule.Check(pass); err != nil {
+			return nil, fmt.Errorf("rule %s: %w", meta.ID, err)
+		}
+		for _, d := range diagnostics {
+			p := fset.Position(d.Pos)
+			if !consume(wants[position{p.Filename, p.Line}], d.Message) {
+				problems = append(problems, fmt.Sprintf("%s:%d:%d: unexpected finding %q", p.Filename, p.Line, p.Column, d.Message))
+			}
+		}
+	}
+	for _, pos := range slices.SortedFunc(maps.Keys(wants), position.compare) {
+		for _, w := range wants[pos] {
+			if !w.matched {
+				problems = append(problems, fmt.Sprintf("%s:%d: no finding matching %q", pos.file, pos.line, w.re))
+			}
+		}
+	}
+	return problems, nil
+}
+
+// Run checks rule against every .go file in dir and reports each mismatch
+// between findings and want comments as a test error.
+func Run(t testing.TB, rule lint.Rule, dir string) {
+	t.Helper()
+	problems, err := check(rule, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range problems {
+		t.Error(p)
+	}
 }

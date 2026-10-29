@@ -18,35 +18,6 @@ type scanOptions struct {
 	disabled map[string]bool
 }
 
-// resolveOptions loads configPath, if any, and merges it with flags: a
-// flag the caller set on cmd wins over the config file, which wins over
-// the built-in default already in flags.
-func resolveOptions(cat *catalog.Catalog, cmd *cobra.Command, flags scanFlags, configPath string) (scanOptions, error) {
-	var file config.File
-	if configPath != "" {
-		loaded, err := config.Load(configPath)
-		if err != nil {
-			return scanOptions{}, err
-		}
-		file = loaded
-	}
-
-	format := flags.format
-	if !cmd.Flags().Changed("format") && file.Format != nil {
-		format = *file.Format
-	}
-	failOn := flags.failOn
-	if !cmd.Flags().Changed("fail-on") && file.FailOn != nil {
-		failOn = *file.FailOn
-	}
-
-	disabled, err := resolveDisabledRules(cat, file.Rules, flags.enableRules, flags.disableRules)
-	if err != nil {
-		return scanOptions{}, err
-	}
-	return scanOptions{format: format, failOn: failOn, disabled: disabled}, nil
-}
-
 // resolveDisabledRules merges the config file's rule table with
 // --enable-rule and --disable-rule flags, flags winning over the config
 // file. Every named rule must exist in cat, and no rule may be named by
@@ -86,6 +57,35 @@ func resolveDisabledRules(cat *catalog.Catalog, configRules map[string]bool, ena
 		disabled[id] = true
 	}
 	return disabled, nil
+}
+
+// resolveOptions loads configPath, if any, and merges it with flags: a
+// flag the caller set on cmd wins over the config file, which wins over
+// the built-in default already in flags.
+func resolveOptions(cat *catalog.Catalog, cmd *cobra.Command, flags scanFlags, configPath string) (scanOptions, error) {
+	var file config.File
+	if configPath != "" {
+		loaded, err := config.Load(configPath)
+		if err != nil {
+			return scanOptions{}, err
+		}
+		file = loaded
+	}
+
+	format := flags.format
+	if !cmd.Flags().Changed("format") && file.Format != nil {
+		format = *file.Format
+	}
+	failOn := flags.failOn
+	if !cmd.Flags().Changed("fail-on") && file.FailOn != nil {
+		failOn = *file.FailOn
+	}
+
+	disabled, err := resolveDisabledRules(cat, file.Rules, flags.enableRules, flags.disableRules)
+	if err != nil {
+		return scanOptions{}, err
+	}
+	return scanOptions{format: format, failOn: failOn, disabled: disabled}, nil
 }
 
 // parseFailOn parses the --fail-on value as the minimum severity that

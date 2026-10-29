@@ -49,7 +49,7 @@ func fanOut(ctx context.Context, pkgs []*loader.Package, rules []lint.Rule, inSc
 		}
 		g.Go(func() error {
 			u := units[i]
-			results[i], unitErrs[i] = runUnit(targets[u.pkgIdx], rules[u.ruleIdx])
+			results[i], unitErrs[i] = targets[u.pkgIdx].run(rules[u.ruleIdx])
 			return nil
 		})
 	}
