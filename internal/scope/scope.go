@@ -1,5 +1,5 @@
 // Package scope decides which files a scan covers, from explicit path
-// inputs narrowed by include and exclude selectors.
+// inputs narrowed by exclude selectors.
 package scope
 
 import (
@@ -11,21 +11,20 @@ import (
 )
 
 // Set is the set of files a scan covers: the Go files under its path
-// inputs, narrowed by its include and exclude selectors.
+// inputs, minus those under its exclude selectors.
 type Set struct {
 	paths    []string            // canonical absolute inputs, input order
 	files    map[string]struct{} // canonical file inputs
 	dirs     []string            // canonical directory inputs
-	includes []string            // canonical include selectors
 	excludes []string            // canonical exclude selectors
 }
 
 // New validates every path as an existing directory or an existing .go
-// file, and builds a Set scoped to them. include and exclude narrow which
-// files Contains accepts; they may name files or directories and need not
-// exist. paths must not be empty; callers wanting every file default it to
+// file, and builds a Set scoped to them. exclude narrows which files
+// Contains accepts; its selectors may name files or directories and need
+// not exist. paths must not be empty; callers wanting every file default it to
 // ["."].
-func New(paths, include, exclude []string) (*Set, error) {
+func New(paths, exclude []string) (*Set, error) {
 	if len(paths) == 0 {
 		return nil, errors.New("scope: no paths given")
 	}
@@ -51,13 +50,6 @@ func New(paths, include, exclude []string) (*Set, error) {
 		s.paths = append(s.paths, abs)
 	}
 
-	for _, sel := range include {
-		abs, err := canonicalAbs(sel)
-		if err != nil {
-			return nil, err
-		}
-		s.includes = append(s.includes, abs)
-	}
 	for _, sel := range exclude {
 		abs, err := canonicalAbs(sel)
 		if err != nil {
@@ -75,17 +67,14 @@ func (s *Set) Paths() []string {
 }
 
 // Contains reports whether filename is in scope: it must equal a file
-// input or lie under a directory input, lie under some include selector
-// (if any are set), and lie under no exclude selector.
+// input or lie under a directory input, and lie under no exclude
+// selector.
 func (s *Set) Contains(filename string) bool {
 	f, err := canonicalAbs(filename)
 	if err != nil {
 		return false
 	}
 	if !s.matchesInputs(f) {
-		return false
-	}
-	if len(s.includes) > 0 && !matchesAny(s.includes, f) {
 		return false
 	}
 	return !matchesAny(s.excludes, f)

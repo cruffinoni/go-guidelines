@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"go/ast"
 	"os"
 	"path/filepath"
@@ -71,6 +70,8 @@ func writeModule(t *testing.T, files map[string]string) string {
 		require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
 	}
 	t.Chdir(dir)
+	// Isolate scans from the developer's own user config file.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	return dir
 }
 
@@ -79,6 +80,6 @@ func writeModule(t *testing.T, files map[string]string) string {
 func runCLI(t testing.TB, cat *catalog.Catalog, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	var outBuf, errBuf bytes.Buffer
-	code = run(context.Background(), args, &outBuf, &errBuf, cat)
+	code = run(t.Context(), args, &outBuf, &errBuf, cat)
 	return outBuf.String(), errBuf.String(), code
 }

@@ -16,17 +16,6 @@ import (
 // itself, already written to stdout, explains the failure.
 var errThreshold = errors.New("findings at or above the fail-on threshold")
 
-// run builds the gg-lint command tree over cat, executes args against it,
-// and maps the result to a process exit code: 0 for a clean run, 1 when
-// scan finds findings at or above --fail-on, 2 for a usage or operational
-// error.
-func run(ctx context.Context, args []string, stdout, stderr io.Writer, cat *catalog.Catalog) int {
-	root := newRootCommand(stdout, stderr, cat)
-	root.SetArgs(args)
-	err := root.ExecuteContext(ctx)
-	return exitCode(stderr, err)
-}
-
 // exitCode maps err to a process exit code, printing operational errors
 // once on stderr.
 func exitCode(stderr io.Writer, err error) int {
@@ -41,9 +30,11 @@ func exitCode(stderr io.Writer, err error) int {
 	}
 }
 
-// newRootCommand builds the gg-lint command tree over cat. Subcommand
-// errors are neither auto-printed nor auto-reported as usage, since run
-// reports them once after mapping them to an exit code.
+// newRootCommand builds the gg-lint command tree over cat, writing to
+// stdout and stderr; subcommands reach them through cmd.OutOrStdout and
+// cmd.ErrOrStderr. Subcommand errors are neither auto-printed nor
+// auto-reported as usage, since run reports them once after mapping them
+// to an exit code.
 func newRootCommand(stdout, stderr io.Writer, cat *catalog.Catalog) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "gg-lint",
@@ -54,10 +45,21 @@ func newRootCommand(stdout, stderr io.Writer, cat *catalog.Catalog) *cobra.Comma
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.AddCommand(
-		newScanCommand(stdout, stderr, cat),
-		newRulesCommand(stdout, cat),
-		newSyncInstructionsCommand(stdout),
-		newVersionCommand(stdout),
+		newScanCommand(cat),
+		newRulesCommand(cat),
+		newSyncInstructionsCommand(),
+		newVersionCommand(),
 	)
 	return root
+}
+
+// run builds the gg-lint command tree over cat, executes args against it,
+// and maps the result to a process exit code: 0 for a clean run, 1 when
+// scan finds findings at or above --fail-on, 2 for a usage or operational
+// error.
+func run(ctx context.Context, args []string, stdout, stderr io.Writer, cat *catalog.Catalog) int {
+	root := newRootCommand(stdout, stderr, cat)
+	root.SetArgs(args)
+	err := root.ExecuteContext(ctx)
+	return exitCode(stderr, err)
 }

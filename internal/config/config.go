@@ -1,27 +1,31 @@
-// Package config loads and discovers the gg-lint.toml project
-// configuration.
+// Package config loads and discovers the gg-lint YAML configuration.
 package config
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
-	"github.com/pelletier/go-toml/v2"
+	"go.yaml.in/yaml/v3"
 )
 
-// File is the on-disk shape of gg-lint.toml.
+// FileName is the name of the project config file looked up at the Git
+// worktree root.
+const FileName = "gg-lint.yaml"
+
+// File is the on-disk shape of a gg-lint config file.
 type File struct {
-	Format *string         `toml:"format"`
-	FailOn *string         `toml:"fail_on"`
-	Rules  map[string]bool `toml:"rules"`
+	Format *string         `yaml:"format"`
+	FailOn *string         `yaml:"fail_on"`
+	Rules  map[string]bool `yaml:"rules"`
 }
 
-// Load decodes the TOML file at path into a [File]. Decoding is strict:
-// unknown keys are rejected. Every error names path; when go-toml reports a
-// position, the error also carries the line and column of the offending
-// token.
+// Load decodes the YAML file at path into a [File]. Decoding is strict:
+// unknown and duplicate keys are rejected. An empty file decodes to the
+// zero [File]. Every error names path; decoding errors also carry the line
+// of the offending node.
 func Load(path string) (File, error) {
 	var file File
 	data, err := os.Open(path)
@@ -30,25 +34,52 @@ func Load(path string) (File, error) {
 	}
 	defer data.Close()
 
-	if err := toml.NewDecoder(data).DisallowUnknownFields().Decode(&file); err != nil {
-		if decodeErr, ok := errors.AsType[*toml.DecodeError](err); ok {
-			line, column := decodeErr.Position()
-			return file, fmt.Errorf("config %s:%d:%d: %w", path, line, column, err)
-		}
+	dec := yaml.NewDecoder(data)
+	dec.KnownFields(true)
+	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
 		return file, fmt.Errorf("config %s: %w", path, err)
 	}
 	return file, nil
 }
 
-// Discover returns the path to root/gg-lint.toml, or "" if no such file
-// exists. Stat errors other than "not exist" are returned as-is.
-func Discover(root string) (string, error) {
-	path := filepath.Join(root, "gg-lint.toml")
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
+// UserPath returns the path of the user-level config file:
+// $XDG_CONFIG_HOME/gg-lint/config.yaml when XDG_CONFIG_HOME is set to an
+// absolute path, ~/.config/gg-lint/config.yaml otherwise. Unlike
+// [os.UserConfigDir], it uses ~/.config on macOS too, as most CLI tools do.
+func UserPath() (string, error) {
+	dir := os.Getenv("XDG_CONFIG_HOME")
+	if !filepath.IsAbs(dir) {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve user config directory: %w", err)
 		}
-		return "", err
+		dir = filepath.Join(home, ".config")
 	}
-	return path, nil
+	return filepath.Join(dir, "gg-lint", "config.yaml"), nil
+}
+
+// Discover returns the first config file that exists among
+// repoRoot/[FileName] and [UserPath], or "" if neither does. An empty
+// repoRoot skips the project file, and an unresolvable home directory
+// skips the user file. Stat errors other than "not exist" are returned
+// as-is.
+func Discover(repoRoot string) (string, error) {
+	var candidates []string
+	if repoRoot != "" {
+		candidates = append(candidates, filepath.Join(repoRoot, FileName))
+	}
+	if userPath, err := UserPath(); err == nil {
+		candidates = append(candidates, userPath)
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return "", err
+		}
+		return path, nil
+	}
+	return "", nil
 }

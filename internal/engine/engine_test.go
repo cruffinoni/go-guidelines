@@ -118,9 +118,9 @@ func newCatalog(t *testing.T, rules ...lint.Rule) *catalog.Catalog {
 	return c
 }
 
-func newScope(t *testing.T, paths, include, exclude []string) *scope.Set {
+func newScope(t *testing.T, paths, exclude []string) *scope.Set {
 	t.Helper()
-	s, err := scope.New(paths, include, exclude)
+	s, err := scope.New(paths, exclude)
 	require.NoError(t, err)
 	return s
 }
@@ -157,7 +157,7 @@ func TestCheck_NoRulesSelectedStillReturnsFiles(t *testing.T) {
 	cat := newCatalog(t, fileCountRule("R1"))
 	e := engine.New(cat, engine.Options{Rules: func(lint.Meta) bool { return false }})
 
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 	res, err := e.Check(t.Context(), s)
 	require.NoError(t, err)
 	assert.Empty(t, res.Findings)
@@ -166,7 +166,7 @@ func TestCheck_NoRulesSelectedStillReturnsFiles(t *testing.T) {
 
 func TestCheck_Determinism(t *testing.T) {
 	cat := newCatalog(t, fileCountRule("R1"), fileCountRule("R2"))
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	var baseline engine.Result
 	for i := 0; i < 20; i++ {
@@ -189,7 +189,7 @@ func TestCheck_Determinism(t *testing.T) {
 func TestCheck_PanicInOneRuleDoesNotStopOthers(t *testing.T) {
 	cat := newCatalog(t, panicRule("PANIC"), fileCountRule("OK"))
 	e := engine.New(cat, engine.Options{})
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	res, err := e.Check(t.Context(), s)
 	require.Error(t, err)
@@ -209,7 +209,7 @@ func TestCheck_ErrorPropagates(t *testing.T) {
 	sentinel := errors.New("boom")
 	cat := newCatalog(t, erroringRule("ERR", sentinel), fileCountRule("OK"))
 	e := engine.New(cat, engine.Options{})
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	res, err := e.Check(t.Context(), s)
 	require.Error(t, err)
@@ -228,7 +228,7 @@ func TestCheck_ErrorPropagates(t *testing.T) {
 func TestCheck_Cancellation(t *testing.T) {
 	cat := newCatalog(t, fileCountRule("R1"))
 	e := engine.New(cat, engine.Options{Workers: 1})
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -240,7 +240,7 @@ func TestCheck_Cancellation(t *testing.T) {
 func TestCheck_InvalidPositionIsAnError(t *testing.T) {
 	cat := newCatalog(t, invalidPosRule("BAD"), fileCountRule("OK"))
 	e := engine.New(cat, engine.Options{})
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	res, err := e.Check(t.Context(), s)
 	require.Error(t, err)
@@ -255,7 +255,7 @@ func TestCheck_InvalidPositionIsAnError(t *testing.T) {
 func TestCheck_NeedsTypesDrivesTypeLoading(t *testing.T) {
 	cat := newCatalog(t, typesPresenceRule("TYPED", true, true))
 	e := engine.New(cat, engine.Options{})
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	_, err := e.Check(t.Context(), s)
 	require.NoError(t, err)
@@ -264,7 +264,7 @@ func TestCheck_NeedsTypesDrivesTypeLoading(t *testing.T) {
 func TestCheck_NoRuleNeedsTypesSkipsTypeLoading(t *testing.T) {
 	cat := newCatalog(t, typesPresenceRule("UNTYPED", false, false))
 	e := engine.New(cat, engine.Options{})
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	_, err := e.Check(t.Context(), s)
 	require.NoError(t, err)
@@ -273,7 +273,7 @@ func TestCheck_NoRuleNeedsTypesSkipsTypeLoading(t *testing.T) {
 func TestCheck_ScopeFilteringExcludesSiblingFile(t *testing.T) {
 	cat := newCatalog(t, fileCountRule("R1"))
 	e := engine.New(cat, engine.Options{})
-	s := newScope(t, []string{"testdata/mod/a.go"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod/a.go"}, nil)
 
 	res, err := e.Check(t.Context(), s)
 	require.NoError(t, err)
@@ -288,24 +288,13 @@ func TestCheck_ScopeFilteringExcludesSiblingFile(t *testing.T) {
 func TestCheck_ExcludeDropsMatchingFiles(t *testing.T) {
 	cat := newCatalog(t, fileCountRule("R1"))
 	e := engine.New(cat, engine.Options{})
-	s := newScope(t, []string{"testdata/mod"}, nil, []string{"testdata/mod/sub"})
+	s := newScope(t, []string{"testdata/mod"}, []string{"testdata/mod/sub"})
 
 	res, err := e.Check(t.Context(), s)
 	require.NoError(t, err)
 
 	excluded := abs(t, "testdata/mod/sub/c.go")
 	assert.NotContains(t, res.Files, excluded)
-}
-
-func TestCheck_IncludeKeepsOnlyMatchingFiles(t *testing.T) {
-	cat := newCatalog(t, fileCountRule("R1"))
-	e := engine.New(cat, engine.Options{})
-	s := newScope(t, []string{"testdata/mod"}, []string{"testdata/mod/sub"}, nil)
-
-	res, err := e.Check(t.Context(), s)
-	require.NoError(t, err)
-
-	assert.Equal(t, []string{abs(t, "testdata/mod/sub/c.go")}, res.Files)
 }
 
 func TestCheck_ConcurrencyStress(t *testing.T) {
@@ -315,7 +304,7 @@ func TestCheck_ConcurrencyStress(t *testing.T) {
 	}
 	cat := newCatalog(t, rules...)
 	e := engine.New(cat, engine.Options{Workers: 8})
-	s := newScope(t, []string{"testdata/mod"}, nil, nil)
+	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	res, err := e.Check(t.Context(), s)
 	require.NoError(t, err)

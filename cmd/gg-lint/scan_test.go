@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -96,8 +97,8 @@ func TestScan_ConfigFlagPrecedence(t *testing.T) {
 	dir := writeModule(t, map[string]string{"a.go": "package x\n\nvar Bad = 1\n"})
 	cat := newFakeCatalog(t)
 
-	configPath := filepath.Join(dir, "gg-lint.toml")
-	config := "format = \"json\"\nfail_on = \"none\"\n\n[rules]\nTEST001 = false\n"
+	configPath := filepath.Join(dir, "gg-lint.yaml")
+	config := "format: json\nfail_on: none\nrules:\n  TEST001: false\n"
 	require.NoError(t, os.WriteFile(configPath, []byte(config), 0o644))
 
 	// Config disables TEST001 and allows the finding through (fail_on = none).
@@ -122,6 +123,61 @@ func TestScan_ConfigFlagPrecedence(t *testing.T) {
 	stdout, _, code = runCLI(t, cat, "scan", "--config="+configPath, "--enable-rule=TEST001", "--format=text")
 	require.Equal(t, 0, code)
 	assert.True(t, strings.Contains(stdout, "[TEST001]"), "want text output, got %q", stdout)
+}
+
+func TestScan_UserConfigOutsideGit(t *testing.T) {
+	writeModule(t, map[string]string{"a.go": "package x\n\nvar Bad = 1\n"})
+	cat := newFakeCatalog(t)
+
+	userPath := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "gg-lint", "config.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(userPath), 0o755))
+	require.NoError(t, os.WriteFile(userPath, []byte("format: json\nfail_on: none\n"), 0o644))
+
+	stdout, _, code := runCLI(t, cat, "scan", "--enable-rule=TEST001")
+	require.Equal(t, 0, code, "user config fail_on=none must apply")
+	var doc jsonReport
+	require.NoError(t, json.Unmarshal([]byte(stdout), &doc))
+	require.Len(t, doc.Findings, 1)
+}
+
+// initGitModule creates a Git repository holding a Go module with a.go
+// committed, and returns its root.
+func initGitModule(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	write := func(name, content string) {
+		require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(content), 0o644))
+	}
+	git := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		output, err := cmd.CombinedOutput()
+		require.NoErrorf(t, err, "git %v: %s", args, output)
+	}
+	write("go.mod", "module example.test/repo\n\ngo 1.27\n")
+	write("a.go", "package x\n")
+	git("init", "-q")
+	git("config", "user.email", "test@example.invalid")
+	git("config", "user.name", "Test")
+	git("add", ".")
+	git("commit", "-qm", "initial")
+	return root
+}
+
+// The Git worktree comes from the scanned path, not the working directory.
+func TestScan_GitChangesUsesTargetRepository(t *testing.T) {
+	writeModule(t, map[string]string{"a.go": "package x\n"})
+	repo := initGitModule(t)
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "b.go"), []byte("package x\n"), 0o644))
+	cat := newFakeCatalog(t)
+
+	for _, target := range []string{repo, repo + "/..."} {
+		stdout, stderr, code := runCLI(t, cat, "scan", "--git-changes", "--format=json", target)
+		require.Equalf(t, 0, code, "target %s: %s", target, stderr)
+		var doc jsonReport
+		require.NoError(t, json.Unmarshal([]byte(stdout), &doc))
+		assert.Equal(t, 1, doc.ScannedFiles, "target %s", target)
+	}
 }
 
 func TestScan_OperationalErrors(t *testing.T) {
@@ -149,6 +205,10 @@ func TestScan_OperationalErrors(t *testing.T) {
 			source: "package x\n",
 			args:   []string{"--fix"},
 		},
+		"missing --config file": {
+			source: "package x\n",
+			args:   []string{"--config=missing.yaml"},
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -167,8 +227,8 @@ func TestScan_UnknownRuleInConfig(t *testing.T) {
 	dir := writeModule(t, map[string]string{"a.go": "package x\n"})
 	cat := newFakeCatalog(t)
 
-	configPath := filepath.Join(dir, "gg-lint.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte("[rules]\nNOPE = false\n"), 0o644))
+	configPath := filepath.Join(dir, "gg-lint.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte("rules:\n  NOPE: false\n"), 0o644))
 
 	stdout, stderr, code := runCLI(t, cat, "scan", "--config="+configPath)
 	assert.Equal(t, 2, code)

@@ -1,6 +1,6 @@
 # gg-lint
 
-`gg-lint` is a Go-native analyzer for the selected Go Guidelines rule set. It scans Go files, reports stable rule IDs and locations, supports project configuration and changed-file scans, and manages opt-in Claude/Codex instruction blocks. Scans never modify source files.
+`gg-lint` is a Go-native analyzer for the selected Go Guidelines rule set. It scans Go files, reports stable rule IDs and locations, supports project configuration and Git-changes scans, and manages opt-in Claude/Codex instruction blocks. Scans never modify source files.
 
 ## Install
 
@@ -16,7 +16,7 @@ gg-lint version
 
 ```sh
 gg-lint scan .
-gg-lint scan --format=json --changed-files
+gg-lint scan --format=json --git-changes
 gg-lint rules
 gg-lint rules --format=markdown
 gg-lint sync-instructions --harness claude   # or codex
@@ -24,21 +24,21 @@ gg-lint version
 ```
 
 Every rule is enabled by default. Disable one with `--disable-rule GBP001`
-(repeatable), or in `gg-lint.toml`:
+(repeatable), or in `gg-lint.yaml`:
 
-```toml
-format = "text"   # text or json
-fail_on = "error" # none, info, warning, or error
-
-[rules]
-GBP001 = false
+```yaml
+format: text    # text or json
+fail_on: error  # none, info, warning, or error
+rules:
+  GBP001: false
 ```
 
-`--include` and `--exclude` (repeatable) narrow every scan, not only
-`--changed-files` scans.
+`--exclude` (repeatable) narrows every scan, not only `--git-changes` scans.
 
-`gg-lint` looks for `gg-lint.toml` at the Git repository root unless
-`--config` names a file explicitly. Flags always win over the config file,
+Unless `--config` names a file explicitly, `gg-lint` loads the first config
+file it finds among `gg-lint.yaml` at the Git repository root and
+`$XDG_CONFIG_HOME/gg-lint/config.yaml` (`~/.config/gg-lint/config.yaml` when
+`XDG_CONFIG_HOME` is unset). Flags always win over the config file,
 which wins over the built-in defaults.
 
 Finding locations are printed relative to the current directory, like
