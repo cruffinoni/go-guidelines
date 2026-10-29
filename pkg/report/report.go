@@ -63,7 +63,7 @@ func ParseFormat(s string) (Format, error) {
 func (f Format) Write(w io.Writer, r Report) error {
 	findings := r.Findings
 	if findings == nil {
-		findings = []Finding{}
+		findings = make([]Finding, 0)
 	}
 	switch f {
 	case JSON:
