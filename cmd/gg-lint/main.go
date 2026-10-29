@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 
@@ -18,7 +19,12 @@ var (
 )
 
 func main() {
+	cat, err := catalog.Builtin()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "gg-lint: %v\n", err)
+		os.Exit(2)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr, catalog.Builtin()))
+	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr, cat))
 }

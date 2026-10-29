@@ -87,7 +87,9 @@ func TestListReturnsACopy(t *testing.T) {
 }
 
 func TestBuiltinIsValidAndNonEmpty(t *testing.T) {
-	assert.NotEmpty(t, Builtin().List())
+	c, err := Builtin()
+	require.NoError(t, err)
+	assert.NotEmpty(t, c.List())
 }
 
 func TestCatalogIsSafeForConcurrentReads(t *testing.T) {

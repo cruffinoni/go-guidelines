@@ -60,14 +60,13 @@ func New(rules ...lint.Rule) (*Catalog, error) {
 	return &Catalog{ordered: ordered, byID: byID}, nil
 }
 
-// Builtin returns the catalog of every GBP and GCM rule. It panics if the
-// built-in rule set is invalid, which is a programmer error guarded by a test.
-func Builtin() *Catalog {
+// Builtin returns the catalog of every GBP and GCM rule.
+func Builtin() (*Catalog, error) {
 	c, err := New(slices.Concat(gbp.Rules(), gcm.Rules())...)
 	if err != nil {
-		panic(fmt.Sprintf("catalog: built-in rule set is invalid: %v", err))
+		return nil, fmt.Errorf("built-in rule set is invalid: %w", err)
 	}
-	return c
+	return c, nil
 }
 
 // List returns every rule in the catalog, ordered by ID. The returned slice
