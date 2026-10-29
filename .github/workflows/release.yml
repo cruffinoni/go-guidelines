@@ -129,7 +129,7 @@ jobs:
             set -e
             test "$status" -eq 1
             grep -q '"scanned_files":1' "$tmp/changed.json"
-            "$tmp/gg-lint" sync-instructions --provider claude > /dev/null
+            "$tmp/gg-lint" sync-instructions --harness claude > /dev/null
             test -f CLAUDE.md
             test ! -e AGENTS.md
             set +e
