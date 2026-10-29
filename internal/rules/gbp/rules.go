@@ -14,7 +14,6 @@ func Rules() []lint.Rule {
 		ContextAwareHTTPClient{},
 		NoPanicInControlFlow{},
 		PreferNilSlice{},
-		DocumentSliceJSONNilVsEmpty{},
 		StructuredLogging{},
 		ExplicitTimerLifecycle{},
 		ChannelCancellation{},
