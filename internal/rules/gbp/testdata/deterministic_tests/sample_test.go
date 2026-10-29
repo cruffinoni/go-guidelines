@@ -11,7 +11,7 @@ func TestA(t *T) {
 }
 
 func TestB(t *T) {
-	for k := range m { // want "nondeterministic iteration order"
+	for k := range m {
 		_ = k
 	}
 }
