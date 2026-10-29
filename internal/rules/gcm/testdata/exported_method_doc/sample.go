@@ -14,3 +14,17 @@ func (T) unexported() {}
 func PlainFunc() {}
 
 func PlainUndocumented() {}
+
+type u struct{}
+
+func (u) Exported() {}
+
+func (*u) PointerExported() {}
+
+// G is a generic receiver type.
+type G[K comparable, V any] struct{}
+
+func (*G[K, V]) Undocumented() {} // want "exported function or method is missing a documentation comment"
+
+// Documented explains itself.
+func (G[K, V]) Documented() {}
