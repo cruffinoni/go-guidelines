@@ -17,8 +17,8 @@ func (PreferNilSlice) Meta() lint.Meta {
 		Summary: "Flags empty slice literals in favor of nil slices.",
 		Description: "Reports composite literals such as `[]T{}` that have no elements and no explicit " +
 			"length. A nil slice behaves identically to an empty one for almost every operation, so " +
-			"`var s []T` is simpler, unless the call site specifically needs non-nil JSON encoding (`[]` " +
-			"instead of `null`).",
+			"`var s []T` is simpler. When a non-nil empty slice is required, such as to encode `[]` " +
+			"instead of `null` in JSON, write `make([]T, 0)` to make that intent explicit.",
 		Severity: lint.SeverityWarning,
 	}
 }
