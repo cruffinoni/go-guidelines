@@ -1,7 +1,33 @@
-.worktrees/
-dist/
+# Build output
+/gg-lint
+/gg-lint.exe
+/bin/
+/dist/
+*.test
+
+# Test and profiling artifacts
+*.out
+coverage.*
+*.prof
+*.pprof
+
+# Local Go and Git workspaces
+go.work
+go.work.sum
+/.worktrees/
 
 # Local project content not tracked by default
 /docs/
 /scripts/
 /.hermes/
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.iml
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

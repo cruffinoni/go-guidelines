@@ -94,7 +94,7 @@ jobs:
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
             GOOS=${target%/*} GOARCH=${target#*/} go build -buildvcs=false -o "$RUNNER_TEMP/gg-lint-${target%/*}-${target#*/}" ./cmd/gg-lint
           done
-      - name: Smoke-test CLI and changed-file scan
+      - name: Smoke-test CLI and Git-changes scan
         shell: bash
         run: |
           set -euo pipefail
@@ -124,12 +124,12 @@ jobs:
             printf '%s\n' 'pkg/ok.go' > .gitignore
             git add .gitignore pkg/bad.go
             set +e
-            "$tmp/gg-lint" scan --changed-files --format=json . > "$tmp/changed.json"
+            "$tmp/gg-lint" scan --git-changes --format=json . > "$tmp/changed.json"
             status=$?
             set -e
             test "$status" -eq 1
             grep -q '"scanned_files":1' "$tmp/changed.json"
-            "$tmp/gg-lint" sync-instructions --provider claude > /dev/null
+            "$tmp/gg-lint" sync-instructions --harness claude > /dev/null
             test -f CLAUDE.md
             test ! -e AGENTS.md
             set +e
