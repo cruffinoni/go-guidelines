@@ -107,6 +107,7 @@ func TestUserPathFallsBackToDotConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir uses USERPROFILE on Windows
 
 	got, err := config.UserPath()
 	require.NoError(t, err)
