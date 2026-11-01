@@ -2,12 +2,14 @@ package gbp
 
 import (
 	"go/ast"
+	"go/types"
+	"strings"
 
 	"github.com/cruffinoni/go-guidelines/internal/lint"
 )
 
-// MethodCandidateForPointerReceiver flags functions that take an exported
-// struct pointer as their first parameter.
+// MethodCandidateForPointerReceiver flags functions that take one local
+// struct as their only parameter.
 type MethodCandidateForPointerReceiver struct{}
 
 // Meta returns the GBP018 identity, severity, and documentation.
@@ -15,31 +17,53 @@ func (MethodCandidateForPointerReceiver) Meta() lint.Meta {
 	return lint.Meta{
 		ID:      "GBP018",
 		Name:    "method-candidate-for-pointer-receiver",
-		Summary: "Flags functions that take an exported struct pointer as their first parameter.",
-		Description: "Reports a top-level function whose first parameter is a pointer to an exported " +
-			"type. A function that exists only to operate on one type's data is more discoverable, and " +
-			"keeps related logic co-located, as a method on that type.",
-		Severity: lint.SeverityInfo,
+		Summary: "Flags functions that take a local struct as their only parameter.",
+		Description: "Reports a top-level function whose only parameter is a value or pointer to a " +
+			"defined struct type in the same package. A function that exists only to operate on one " +
+			"type's data is more discoverable, and keeps related logic co-located, as a method on that " +
+			"type. Constructors and functions with additional parameters are left to review.",
+		Severity:   lint.SeverityInfo,
+		NeedsTypes: true,
 	}
+}
+
+// isConstructorName reports whether name follows the common constructor
+// naming convention.
+func isConstructorName(name string) bool {
+	return strings.HasPrefix(name, "New") || strings.HasPrefix(name, "new")
+}
+
+// localStructType returns the named local struct type behind t, if any.
+func localStructType(pass *lint.Pass, t types.Type) *types.Named {
+	if t == nil {
+		return nil
+	}
+	if ptr, ok := t.(*types.Pointer); ok {
+		t = ptr.Elem()
+	}
+	named, ok := types.Unalias(t).(*types.Named)
+	if !ok || named.Obj().Pkg() != pass.Pkg {
+		return nil
+	}
+	if _, ok := named.Underlying().(*types.Struct); !ok {
+		return nil
+	}
+	return named
 }
 
 // Check reports functions that could be methods in pass.
 func (MethodCandidateForPointerReceiver) Check(pass *lint.Pass) error {
 	for _, file := range pass.Files {
-		ast.Inspect(file, func(n ast.Node) bool {
-			f, ok := n.(*ast.FuncDecl)
-			if !ok || f.Recv != nil || len(f.Type.Params.List) == 0 {
-				return true
+		for _, decl := range file.Decls {
+			f, ok := decl.(*ast.FuncDecl)
+			if !ok || f.Recv != nil || isConstructorName(f.Name.Name) || parameterCount(f.Type.Params) != 1 {
+				continue
 			}
-			star, ok := f.Type.Params.List[0].Type.(*ast.StarExpr)
-			if !ok {
-				return true
+			if localStructType(pass, pass.TypesInfo.TypeOf(f.Type.Params.List[0].Type)) == nil {
+				continue
 			}
-			if ident, ok := star.X.(*ast.Ident); ok && ast.IsExported(ident.Name) {
-				pass.Reportf(f.Pos(), "function taking a struct pointer first may belong as a method")
-			}
-			return true
-		})
+			pass.Reportf(f.Pos(), "function taking a struct as its only parameter may belong as a method")
+		}
 	}
 	return nil
 }

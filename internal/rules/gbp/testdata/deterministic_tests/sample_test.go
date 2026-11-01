@@ -11,12 +11,32 @@ func TestA(t *T) {
 }
 
 func TestB(t *T) {
+	<-time.After(time.Second) // want "timing-dependent"
+}
+
+func TestC(t *T) {
+	<-time.Tick(time.Second) // want "timing-dependent"
+}
+
+func TestD(t *T) {
+	_ = time.NewTimer(time.Second) // want "timing-dependent"
+}
+
+func TestE(t *T) {
+	_ = time.NewTicker(time.Second) // want "timing-dependent"
+}
+
+func TestF(t *T) {
+	time.AfterFunc(time.Second, func() {}) // want "timing-dependent"
+}
+
+func TestMapIteration(t *T) {
 	for k := range m {
 		_ = k
 	}
 }
 
-func TestC(t *T) {
+func TestSliceIteration(t *T) {
 	for _, v := range list {
 		_ = v
 	}

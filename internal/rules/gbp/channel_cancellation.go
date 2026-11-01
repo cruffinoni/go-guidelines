@@ -2,6 +2,7 @@ package gbp
 
 import (
 	"go/ast"
+	"go/types"
 
 	"github.com/cruffinoni/go-guidelines/internal/lint"
 )
@@ -20,8 +21,28 @@ func (ChannelCancellation) Meta() lint.Meta {
 			"send/receive, but has neither a `select` statement nor a reference to a context's `Done` " +
 			"channel. A channel pipeline with no cancellation path can block forever; give every stage a " +
 			"way to observe cancellation.",
-		Severity: lint.SeverityWarning,
+		Severity:   lint.SeverityWarning,
+		NeedsTypes: true,
 	}
+}
+
+// isContextDone reports whether sel is a Done call on a context.Context
+// value. It uses type information so that unrelated Done methods, such as
+// sync.WaitGroup.Done, are not treated as cancellation.
+func isContextDone(pass *lint.Pass, sel *ast.SelectorExpr) bool {
+	if sel.Sel.Name != "Done" {
+		return false
+	}
+	t := pass.TypesInfo.TypeOf(sel.X)
+	if t == nil {
+		return false
+	}
+	named, ok := types.Unalias(t).(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := named.Obj()
+	return obj.Pkg() != nil && obj.Pkg().Path() == "context" && obj.Name() == "Context"
 }
 
 // Check reports channel-based functions lacking a cancellation path in pass.
@@ -46,7 +67,7 @@ func (ChannelCancellation) Check(pass *lint.Pass) error {
 				case *ast.SelectStmt:
 					hasSelect = true
 				case *ast.SelectorExpr:
-					if x.Sel.Name == "Done" {
+					if isContextDone(pass, x) {
 						hasContext = true
 					}
 				}

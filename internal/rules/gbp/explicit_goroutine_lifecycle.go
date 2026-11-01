@@ -15,11 +15,11 @@ func (ExplicitGoroutineLifecycle) Meta() lint.Meta {
 	return lint.Meta{
 		ID:      "GBP005",
 		Name:    "explicit-goroutine-lifecycle",
-		Summary: "Flags goroutines started without visible lifecycle handling.",
+		Summary: "Flags every goroutine started with a go statement.",
 		Description: "Reports every `go` statement in the file. A goroutine started this way has no " +
-			"visible owner for its errors, panics, or shutdown signal. Use a structured concurrency " +
-			"helper, such as `errgroup` or `sync.WaitGroup`, that makes completion and error handling " +
-			"explicit.",
+			"visible owner for its errors, panics, or shutdown signal. Prefer a structured concurrency " +
+			"helper whose API does not require a bare `go` statement, such as `errgroup.Go`, so " +
+			"completion and error handling stay explicit.",
 		Severity: lint.SeverityWarning,
 	}
 }
