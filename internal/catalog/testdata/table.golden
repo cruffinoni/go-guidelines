@@ -1,0 +1,3 @@
+ID  NAME                 SEVERITY  SUMMARY
+R1  no-dot-imports       warning   flags dot imports
+R2  require-package-doc  error     requires a package doc comment
