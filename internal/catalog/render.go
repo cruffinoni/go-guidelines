@@ -7,6 +7,26 @@ import (
 	"text/tabwriter"
 )
 
+// escapeMarkdownCell escapes the pipe characters that would otherwise break
+// a Markdown table cell.
+func escapeMarkdownCell(s string) string {
+	return strings.ReplaceAll(s, "|", "\\|")
+}
+
+// errWriter wraps a writer and records its first write error, so a
+// sequence of writes can skip error checks after the first failure.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (e *errWriter) printf(format string, args ...any) {
+	if e.err != nil {
+		return
+	}
+	_, e.err = fmt.Fprintf(e.w, format, args...)
+}
+
 // WriteTable writes every rule as an aligned table with columns ID, NAME,
 // SEVERITY, and SUMMARY.
 func (c *Catalog) WriteTable(w io.Writer) error {
@@ -44,24 +64,4 @@ func (c *Catalog) WriteMarkdown(w io.Writer) error {
 		ew.printf("%s\n\n", m.Description)
 	}
 	return ew.err
-}
-
-// escapeMarkdownCell escapes the pipe characters that would otherwise break
-// a Markdown table cell.
-func escapeMarkdownCell(s string) string {
-	return strings.ReplaceAll(s, "|", "\\|")
-}
-
-// errWriter wraps a writer and records its first write error, so a
-// sequence of writes can skip error checks after the first failure.
-type errWriter struct {
-	w   io.Writer
-	err error
-}
-
-func (e *errWriter) printf(format string, args ...any) {
-	if e.err != nil {
-		return
-	}
-	_, e.err = fmt.Fprintf(e.w, format, args...)
 }
