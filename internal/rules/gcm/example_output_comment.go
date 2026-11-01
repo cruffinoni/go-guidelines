@@ -26,8 +26,11 @@ func (ExampleOutputComment) Meta() lint.Meta {
 // or Unordered output comment.
 func (ExampleOutputComment) Check(pass *lint.Pass) error {
 	for _, file := range pass.Files {
+		if !pass.IsTestFile(file) {
+			continue
+		}
 		for f := range exportedFuncs(pass, file) {
-			if !strings.HasPrefix(f.Name.Name, "Example") {
+			if f.Recv != nil || !strings.HasPrefix(f.Name.Name, "Example") {
 				continue
 			}
 			if !hasExampleOutput(file, f) {

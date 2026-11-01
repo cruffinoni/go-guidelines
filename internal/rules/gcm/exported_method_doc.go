@@ -22,19 +22,6 @@ func (ExportedMethodDoc) Meta() lint.Meta {
 	}
 }
 
-// Check reports exported methods in pass that have no documentation comment.
-func (ExportedMethodDoc) Check(pass *lint.Pass) error {
-	for _, file := range pass.Files {
-		for f := range exportedFuncs(pass, file) {
-			if f.Recv == nil || f.Doc != nil || !ast.IsExported(receiverTypeName(f.Recv.List[0].Type)) {
-				continue
-			}
-			pass.Report(lint.Diagnostic{Pos: f.Pos(), Message: "exported function or method is missing a documentation comment"})
-		}
-	}
-	return nil
-}
-
 // receiverTypeName returns the base type name of a method receiver type such
 // as T, *T, or *G[K, V], or "" if expr has no such name.
 func receiverTypeName(expr ast.Expr) string {
@@ -54,4 +41,17 @@ func receiverTypeName(expr ast.Expr) string {
 			return ""
 		}
 	}
+}
+
+// Check reports exported methods in pass that have no documentation comment.
+func (ExportedMethodDoc) Check(pass *lint.Pass) error {
+	for _, file := range pass.Files {
+		for f := range exportedFuncs(pass, file) {
+			if f.Recv == nil || f.Doc != nil || !ast.IsExported(receiverTypeName(f.Recv.List[0].Type)) {
+				continue
+			}
+			pass.Report(lint.Diagnostic{Pos: f.Pos(), Message: "exported function or method is missing a documentation comment"})
+		}
+	}
+	return nil
 }
