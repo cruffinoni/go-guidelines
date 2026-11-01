@@ -25,11 +25,24 @@ jobs:
       - name: Check Go formatting
         shell: bash
         run: |
-          unformatted=$(gofmt -l ./cmd ./internal)
+          unformatted=$(gofmt -l ./cmd ./internal ./pkg)
           if [[ -n "$unformatted" ]]; then
             printf 'Unformatted Go files:\n%s\n' "$unformatted"
             exit 1
           fi
+
+  release-smoke:
+    name: release-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run release smoke script
+        shell: bash
+        run: bash .github/scripts/smoke-cli.sh
 
   native-tests:
     name: native-tests (${{ matrix.os }})
@@ -66,3 +79,15 @@ jobs:
           cache: true
       - name: Run race-enabled tests
         run: go test -race -cover ./...
+
+  security:
+    name: security (govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...
