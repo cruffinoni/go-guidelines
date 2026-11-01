@@ -3,6 +3,7 @@ package report_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -83,4 +84,33 @@ func TestFormatJSONFindingsIsAlwaysAnArray(t *testing.T) {
 	findings, ok := decoded["findings"].([]any)
 	require.True(t, ok, "findings must never be null")
 	assert.Empty(t, findings)
+}
+
+// failWriter fails every write.
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) {
+	return 0, errors.New("disk full")
+}
+
+func TestFormatTextPropagatesWriteError(t *testing.T) {
+	tests := map[string]report.Report{
+		"findings": {
+			ScannedFiles: 1,
+			Findings: []report.Finding{
+				{RuleID: "TEST001", Severity: "error", Message: "bad", File: "a.go", Line: 1, Column: 1},
+			},
+		},
+		"no findings": {
+			ScannedFiles: 2,
+		},
+	}
+
+	for name, r := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := report.Text.Write(failWriter{}, r)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "disk full")
+		})
+	}
 }

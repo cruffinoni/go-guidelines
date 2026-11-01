@@ -56,6 +56,12 @@ func ParseFormat(s string) (Format, error) {
 	}
 }
 
+// writef writes one formatted report line and returns the writer's error.
+func writef(w io.Writer, format string, args ...any) error {
+	_, err := fmt.Fprintf(w, format, args...)
+	return err
+}
+
 // Write renders r to w in format f. For [Text], it writes one line per
 // finding and, when there are none, "No findings (N Go files scanned).".
 // For [JSON], it writes one JSON object terminated by a newline, with
@@ -71,10 +77,12 @@ func (f Format) Write(w io.Writer, r Report) error {
 		return json.NewEncoder(w).Encode(doc)
 	case Text:
 		for _, finding := range findings {
-			fmt.Fprintf(w, "%s:%d:%d: %s [%s] %s\n", finding.File, finding.Line, finding.Column, finding.Severity, finding.RuleID, finding.Message)
+			if err := writef(w, "%s:%d:%d: %s [%s] %s\n", finding.File, finding.Line, finding.Column, finding.Severity, finding.RuleID, finding.Message); err != nil {
+				return err
+			}
 		}
 		if len(findings) == 0 {
-			fmt.Fprintf(w, "No findings (%d Go files scanned).\n", r.ScannedFiles)
+			return writef(w, "No findings (%d Go files scanned).\n", r.ScannedFiles)
 		}
 		return nil
 	default:
