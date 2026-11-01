@@ -200,3 +200,17 @@ func TestLoad_CanceledContext(t *testing.T) {
 		assert.Contains(t, err.Error(), "context canceled")
 	}
 }
+
+func TestLoad_GeneratedFiles(t *testing.T) {
+	pkgs, err := loader.Load(t.Context(), loader.Config{Tests: true}, "testdata/mod")
+	require.NoError(t, err)
+
+	generated := abs(t, "testdata/mod/generated.go")
+	var found bool
+	for _, pkg := range pkgs {
+		if _, ok := pkg.GeneratedFiles()[generated]; ok {
+			found = true
+		}
+	}
+	assert.True(t, found, "generated.go was not reported as generated")
+}
