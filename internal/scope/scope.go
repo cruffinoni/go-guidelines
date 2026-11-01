@@ -51,7 +51,7 @@ func New(paths, exclude []string) (*Set, error) {
 	}
 
 	for _, sel := range exclude {
-		abs, err := canonicalAbs(sel)
+		abs, err := canonicalAbsAllowMissing(sel)
 		if err != nil {
 			return nil, err
 		}
@@ -60,24 +60,42 @@ func New(paths, exclude []string) (*Set, error) {
 	return s, nil
 }
 
+// NewEmpty returns an empty Set, used when a narrowed scan has no files.
+func NewEmpty() *Set {
+	return &Set{files: make(map[string]struct{})}
+}
+
+// Empty reports whether the Set has no path inputs.
+func (s *Set) Empty() bool {
+	return len(s.paths) == 0
+}
+
+// HasDirectoryInput reports whether the Set was built from at least one
+// directory path. Directory scans include test files by default.
+func (s *Set) HasDirectoryInput() bool {
+	return len(s.dirs) > 0
+}
+
 // Paths returns the Set's absolute path inputs, in input order, for the
 // loader to read.
 func (s *Set) Paths() []string {
 	return slices.Clone(s.paths)
 }
 
-// Contains reports whether filename is in scope: it must equal a file
-// input or lie under a directory input, and lie under no exclude
-// selector.
-func (s *Set) Contains(filename string) bool {
+// DirectoryInputs returns the Set's canonical directory inputs.
+func (s *Set) DirectoryInputs() []string {
+	return slices.Clone(s.dirs)
+}
+
+// IsFileInput reports whether filename names an explicit file input rather
+// than a file merely covered by a directory input.
+func (s *Set) IsFileInput(filename string) bool {
 	f, err := canonicalAbs(filename)
 	if err != nil {
 		return false
 	}
-	if !s.matchesInputs(f) {
-		return false
-	}
-	return !matchesAny(s.excludes, f)
+	_, ok := s.files[f]
+	return ok
 }
 
 // matchesInputs reports whether f equals a file input or lies under a
@@ -92,4 +110,18 @@ func (s *Set) matchesInputs(f string) bool {
 		}
 	}
 	return false
+}
+
+// Contains reports whether filename is in scope: it must equal a file
+// input or lie under a directory input, and lie under no exclude
+// selector.
+func (s *Set) Contains(filename string) bool {
+	f, err := canonicalAbs(filename)
+	if err != nil {
+		return false
+	}
+	if !s.matchesInputs(f) {
+		return false
+	}
+	return !matchesAny(s.excludes, f)
 }

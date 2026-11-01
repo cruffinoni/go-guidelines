@@ -140,3 +140,20 @@ func TestSet_Contains_SymlinkedRoot(t *testing.T) {
 	assert.True(t, s.Contains(file))
 	assert.True(t, s.Contains(filepath.Join(link, "a.go")))
 }
+
+func TestSet_Contains_ExcludeThroughSymlinkedRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
+	}
+	real := t.TempDir()
+	file := filepath.Join(real, "a.go")
+	writeGoFile(t, file)
+
+	link := filepath.Join(t.TempDir(), "link")
+	require.NoError(t, os.Symlink(real, link))
+
+	s, err := scope.New([]string{link}, []string{filepath.Join(link, "a.go")})
+	require.NoError(t, err)
+
+	assert.False(t, s.Contains(file), "the symlinked selector does not cover a.go")
+}

@@ -48,11 +48,11 @@ func newSyncInstructionsCommand() *cobra.Command {
 				return err
 			}
 			if changed {
-				fmt.Fprintf(cmd.OutOrStdout(), "Updated %s project instructions.\n", h.Name())
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Updated %s project instructions.\n", h.Name())
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Instructions already current (%s).\n", h.Name())
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Instructions already current (%s).\n", h.Name())
 			}
-			return nil
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&name, "harness", "", fmt.Sprintf("coding-agent harness to update: %s (required)", harnessNames()))

@@ -50,37 +50,48 @@ func TestLoadDecodesAnEmptyFile(t *testing.T) {
 	assert.Equal(t, config.File{}, file)
 }
 
-func TestLoadRejectsUnknownKeyWithLine(t *testing.T) {
-	path := writeConfig(t, "format: json\nbogus_key: 1\n")
+func TestLoadRejectsInvalidFiles(t *testing.T) {
+	tests := map[string]struct {
+		content string
+		missing bool
+		want    string
+	}{
+		"multiple documents": {
+			content: "format: json\n---\nbogus_key: true\n",
+			want:    "multiple YAML documents",
+		},
+		"unknown key": {
+			content: "format: json\nbogus_key: 1\n",
+			want:    "line 2",
+		},
+		"malformed yaml": {
+			content: "format: [json\n",
+		},
+		"duplicate key": {
+			content: "format: json\nformat: text\n",
+		},
+		"missing file": {
+			missing: true,
+		},
+	}
 
-	_, err := config.Load(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), path)
-	assert.Contains(t, err.Error(), "line 2")
-}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var path string
+			if tc.missing {
+				path = filepath.Join(t.TempDir(), "missing.yaml")
+			} else {
+				path = writeConfig(t, tc.content)
+			}
 
-func TestLoadRejectsMalformedYAML(t *testing.T) {
-	path := writeConfig(t, "format: [json\n")
-
-	_, err := config.Load(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), path)
-}
-
-func TestLoadRejectsDuplicateKey(t *testing.T) {
-	path := writeConfig(t, "format: json\nformat: text\n")
-
-	_, err := config.Load(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), path)
-}
-
-func TestLoadReportsMissingFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "missing.yaml")
-
-	_, err := config.Load(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), path)
+			_, err := config.Load(path)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), path)
+			if tc.want != "" {
+				assert.Contains(t, err.Error(), tc.want)
+			}
+		})
+	}
 }
 
 func TestUserPathHonorsXDGConfigHome(t *testing.T) {

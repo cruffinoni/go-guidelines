@@ -35,6 +35,12 @@ func findModuleRoot(dir string) (string, bool) {
 	}
 }
 
+// ModuleRoot returns the directory containing the nearest go.mod at or above
+// dir, if there is one.
+func ModuleRoot(dir string) (string, bool) {
+	return findModuleRoot(dir)
+}
+
 // groupByDir resolves paths and groups them by the module root enclosing
 // them (or, for .go files outside any module, by their own directory), so
 // that Load issues one packages.Load call per group.

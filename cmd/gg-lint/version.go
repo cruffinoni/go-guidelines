@@ -14,8 +14,8 @@ func newVersionCommand() *cobra.Command {
 		Short: "Print build version information.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "gg-lint %s\ncommit: %s\nbuilt: %s\n", version, commit, builtAt)
-			return nil
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "gg-lint %s\ncommit: %s\nbuilt: %s\n", version, commit, builtAt)
+			return err
 		},
 	}
 }

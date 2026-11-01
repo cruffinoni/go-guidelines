@@ -39,7 +39,15 @@ func Load(path string) (File, error) {
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
 		return file, fmt.Errorf("config %s: %w", path, err)
 	}
-	return file, nil
+	var extra any
+	switch err := dec.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+		return file, nil
+	case err != nil:
+		return file, fmt.Errorf("config %s: %w", path, err)
+	default:
+		return file, fmt.Errorf("config %s: multiple YAML documents are not supported", path)
+	}
 }
 
 // UserPath returns the path of the user-level config file:
