@@ -39,7 +39,7 @@ This promotes `v2.4.1-rc.1` to `v2.4.1`; it does not increment the core. After s
 
 ## CI and publishing behavior
 
-`.github/workflows/release.yml` is tag-triggered. Its first job validates the exact tag grammar. Native Linux, macOS, and Windows tests and provider-neutral validation must all pass before GoReleaser publishes. The release job passes `${{ github.ref_name }}` as `GORELEASER_CURRENT_TAG`, so GoReleaser uses the tag that triggered this run even when multiple tags point to the same commit. The action uses the pinned GoReleaser version from the workflow.
+`.github/workflows/release.yml` is tag-triggered. Its first job validates the exact tag grammar, then it calls the shared `.github/workflows/checks.yml` workflow — the same format, native Linux/macOS/Windows, race, self-lint, smoke, and govulncheck jobs that run on pull requests — so release gates cannot drift from CI. Provider-neutral validation (GoReleaser config check, snapshot archives, and an extracted-archive smoke test) must also pass before GoReleaser publishes. The release job passes `${{ github.ref_name }}` as `GORELEASER_CURRENT_TAG`, so GoReleaser uses the tag that triggered this run even when multiple tags point to the same commit. The config check, snapshot, and publishing steps all use the pinned GoReleaser version from the workflow.
 
 `.goreleaser.yaml` sets `release.prerelease: auto`, so a tag suffix such as `-alpha.1` is published as a prerelease. Stable tags have no suffix. `release.make_latest: true` allows stable releases to become latest; GitHub does not allow a release marked prerelease to be latest. Stable tags should be published monotonically; verify the actual `latest` pointer after the first real release.
 

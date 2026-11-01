@@ -3,6 +3,7 @@ name: Go CI
 on:
   pull_request:
   push:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -13,81 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  format-check:
-    name: format-check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Check Go formatting
-        shell: bash
-        run: |
-          unformatted=$(gofmt -l ./cmd ./internal ./pkg)
-          if [[ -n "$unformatted" ]]; then
-            printf 'Unformatted Go files:\n%s\n' "$unformatted"
-            exit 1
-          fi
-
-  release-smoke:
-    name: release-smoke
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run release smoke script
-        shell: bash
-        run: bash .github/scripts/smoke-cli.sh
-
-  native-tests:
-    name: native-tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run Go tests
-        run: go test ./...
-      - name: Vet
-        run: go vet ./...
-      - name: Build all packages
-        run: go build -buildvcs=false ./...
-      - name: Smoke-test CLI scan
-        run: go run ./cmd/gg-lint scan --fail-on=none --format=json ./cmd/gg-lint
-      - name: Lint own code with gg-lint
-        run: go run ./cmd/gg-lint scan --fail-on=error .
-
-  race-tests:
-    name: race-tests (ubuntu-latest)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run race-enabled tests
-        run: go test -race -cover ./...
-
-  security:
-    name: security (govulncheck)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Run govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...
+  checks:
+    name: checks
+    uses: ./.github/workflows/checks.yml
