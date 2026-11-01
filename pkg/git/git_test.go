@@ -1,6 +1,7 @@
 package git_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -59,9 +60,49 @@ func TestRootReturnsWorktreeTopLevel(t *testing.T) {
 	assert.Equal(t, wantRoot, gotRoot)
 }
 
-func TestRootErrorsOutsideAWorktree(t *testing.T) {
-	_, err := git.Root(t.Context(), t.TempDir())
-	assert.True(t, errors.Is(err, git.ErrNotRepository))
+func TestRootErrors(t *testing.T) {
+	tests := map[string]struct {
+		setup     func(t *testing.T) (context.Context, string)
+		wantIs    error
+		wantNotIs error
+	}{
+		"outside a worktree": {
+			setup: func(t *testing.T) (context.Context, string) {
+				return t.Context(), t.TempDir()
+			},
+			wantIs: git.ErrNotRepository,
+		},
+		"canceled context": {
+			setup: func(t *testing.T) (context.Context, string) {
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				return ctx, initRepo(t)
+			},
+			wantIs:    context.Canceled,
+			wantNotIs: git.ErrNotRepository,
+		},
+		"missing git": {
+			setup: func(t *testing.T) (context.Context, string) {
+				t.Setenv("PATH", t.TempDir())
+				return t.Context(), t.TempDir()
+			},
+			wantNotIs: git.ErrNotRepository,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx, dir := tc.setup(t)
+			_, err := git.Root(ctx, dir)
+			require.Error(t, err)
+			if tc.wantIs != nil {
+				assert.ErrorIs(t, err, tc.wantIs)
+			}
+			if tc.wantNotIs != nil {
+				assert.False(t, errors.Is(err, tc.wantNotIs))
+			}
+		})
+	}
 }
 
 func TestChangedFilesIncludesStagedFiles(t *testing.T) {

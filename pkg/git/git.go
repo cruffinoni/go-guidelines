@@ -28,11 +28,18 @@ func gitOutput(ctx context.Context, dir string, args ...string) ([]byte, error) 
 
 // Root returns the top-level directory of the Git worktree containing dir.
 // It wraps ErrNotRepository, with the underlying Git error as cause, when
-// dir is not inside a worktree.
+// dir is not inside a worktree. Cancellation and operational failures (for
+// example, git not being installed) are returned as-is.
 func Root(ctx context.Context, dir string) (string, error) {
 	out, err := gitOutput(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrNotRepository, err)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", ctxErr
+		}
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && strings.Contains(strings.ToLower(string(exitErr.Stderr)), "not a git repository") {
+			return "", fmt.Errorf("%w: %w", ErrNotRepository, err)
+		}
+		return "", fmt.Errorf("git rev-parse --show-toplevel: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -44,6 +51,9 @@ func Root(ctx context.Context, dir string) (string, error) {
 // returned, sorted and deduplicated. Any extension is included; callers
 // that care about Go files filter the result themselves.
 func ChangedFiles(ctx context.Context, root string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	trackedArgs := []string{"diff", "--name-only", "--diff-filter=ACMRTUXB", "-z", "HEAD"}
 	if _, err := gitOutput(ctx, root, "rev-parse", "--verify", "HEAD"); err != nil {
 		trackedArgs = []string{"diff", "--cached", "--name-only", "--diff-filter=ACMRTUXB", "-z"}
