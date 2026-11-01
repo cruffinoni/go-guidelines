@@ -2,6 +2,8 @@ package harness
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -29,48 +31,15 @@ func (m markdownBlock) Name() string { return m.name }
 func (m markdownBlock) startMarker() string { return fmt.Sprintf("<!-- gg-lint:%s:start -->", m.name) }
 func (m markdownBlock) endMarker() string   { return fmt.Sprintf("<!-- gg-lint:%s:end -->", m.name) }
 
-// Sync rewrites root/m.file so it contains exactly one managed block
-// holding instructions, replacing an existing block in place or appending
-// one. Every byte outside the block, and any CRLF line endings, are
-// preserved. A no-op sync performs no write. Writes never escape root, and
-// a symlinked target is refused.
-func (m markdownBlock) Sync(root, instructions string) (changed bool, err error) {
-	rootDir, err := os.OpenRoot(root)
-	if err != nil {
-		return false, fmt.Errorf("open project root %s: %w", root, err)
+// markerIsStandaloneLine reports whether the marker at offset in source
+// occupies its own line: preceded by a newline or the start of source, and
+// followed by a carriage return, a newline, or the end of source.
+func markerIsStandaloneLine(source []byte, marker string, offset int) bool {
+	if offset > 0 && source[offset-1] != '\n' {
+		return false
 	}
-	defer rootDir.Close()
-
-	mode := fs.FileMode(0o644)
-	var original []byte
-	info, statErr := rootDir.Lstat(m.file)
-	switch {
-	case statErr == nil:
-		if info.Mode()&fs.ModeSymlink != 0 {
-			return false, fmt.Errorf("refusing to update %s: target is a symlink", m.file)
-		}
-		mode = info.Mode().Perm()
-		if original, err = rootDir.ReadFile(m.file); err != nil {
-			return false, fmt.Errorf("read %s: %w", m.file, err)
-		}
-	case errors.Is(statErr, fs.ErrNotExist):
-		// No existing file: original stays nil, and the block is appended
-		// to an otherwise empty file.
-	default:
-		return false, fmt.Errorf("inspect %s: %w", m.file, statErr)
-	}
-
-	updated, changed, err := m.render(original, instructions)
-	if err != nil {
-		return false, fmt.Errorf("%s: %w", m.file, err)
-	}
-	if !changed {
-		return false, nil
-	}
-	if err := rootDir.WriteFile(m.file, updated, mode); err != nil {
-		return false, fmt.Errorf("write %s: %w", m.file, err)
-	}
-	return true, nil
+	after := offset + len(marker)
+	return after == len(source) || source[after] == '\r' || source[after] == '\n'
 }
 
 // render returns original with exactly one managed block holding
@@ -131,13 +100,107 @@ func (m markdownBlock) render(original []byte, instructions string) ([]byte, boo
 	return updated, true, nil
 }
 
-// markerIsStandaloneLine reports whether the marker at offset in source
-// occupies its own line: preceded by a newline or the start of source, and
-// followed by a carriage return, a newline, or the end of source.
-func markerIsStandaloneLine(source []byte, marker string, offset int) bool {
-	if offset > 0 && source[offset-1] != '\n' {
-		return false
+// writeAtomic replaces m.file with data using a temporary file and a
+// rename, preserving mode. Renaming replaces the directory entry rather
+// than truncating the existing inode, so hard links to the old file are
+// left untouched and a crash leaves either the old or the new content.
+func (m markdownBlock) writeAtomic(rootDir *os.Root, data []byte, mode fs.FileMode) (err error) {
+	var (
+		tmp     *os.File
+		tmpName string
+	)
+	for range 100 {
+		var suffix [8]byte
+		if _, err := rand.Read(suffix[:]); err != nil {
+			return fmt.Errorf("generate temporary name: %w", err)
+		}
+		name := "." + m.file + ".tmp-" + hex.EncodeToString(suffix[:])
+		f, openErr := rootDir.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+		if errors.Is(openErr, fs.ErrExist) {
+			continue
+		}
+		if openErr != nil {
+			return fmt.Errorf("create temporary file: %w", openErr)
+		}
+		tmp, tmpName = f, name
+		break
 	}
-	after := offset + len(marker)
-	return after == len(source) || source[after] == '\r' || source[after] == '\n'
+	if tmp == nil {
+		return errors.New("could not create a unique temporary file")
+	}
+	defer func() {
+		_ = tmp.Close()
+		_ = rootDir.Remove(tmpName)
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("write temporary file: %w", err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return fmt.Errorf("preserve mode: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("sync temporary file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary file: %w", err)
+	}
+	if err := rootDir.Rename(tmpName, m.file); err != nil {
+		return fmt.Errorf("replace target: %w", err)
+	}
+	// Best effort: make the rename durable where directory syncing is
+	// supported. A failure here does not invalidate the atomic rename.
+	if dir, openErr := rootDir.Open("."); openErr == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
+	return nil
+}
+
+// Sync rewrites root/m.file so it contains exactly one managed block
+// holding instructions, replacing an existing block in place or appending
+// one. Every byte outside the block, and any CRLF line endings, are
+// preserved. A no-op sync performs no write. Writes replace the directory
+// entry atomically and never escape root; a symlink or other non-regular
+// target is refused.
+func (m markdownBlock) Sync(root, instructions string) (changed bool, err error) {
+	rootDir, err := os.OpenRoot(root)
+	if err != nil {
+		return false, fmt.Errorf("open project root %s: %w", root, err)
+	}
+	defer rootDir.Close()
+
+	mode := fs.FileMode(0o644)
+	var original []byte
+	info, statErr := rootDir.Lstat(m.file)
+	switch {
+	case statErr == nil:
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return false, fmt.Errorf("refusing to update %s: target is a symlink", m.file)
+		}
+		if !info.Mode().IsRegular() {
+			return false, fmt.Errorf("refusing to update %s: target is not a regular file", m.file)
+		}
+		mode = info.Mode().Perm()
+		if original, err = rootDir.ReadFile(m.file); err != nil {
+			return false, fmt.Errorf("read %s: %w", m.file, err)
+		}
+	case errors.Is(statErr, fs.ErrNotExist):
+		// No existing file: original stays nil, and the block is appended
+		// to an otherwise empty file.
+	default:
+		return false, fmt.Errorf("inspect %s: %w", m.file, statErr)
+	}
+
+	updated, changed, err := m.render(original, instructions)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", m.file, err)
+	}
+	if !changed {
+		return false, nil
+	}
+	if err := m.writeAtomic(rootDir, updated, mode); err != nil {
+		return false, fmt.Errorf("write %s: %w", m.file, err)
+	}
+	return true, nil
 }

@@ -172,3 +172,53 @@ func TestSyncRejectsAForeignHarnessMarker(t *testing.T) {
 	assert.Contains(t, err.Error(), "marker")
 	assert.Equal(t, before, readFile(t, path), "file with a foreign marker changed")
 }
+
+func TestSyncDoesNotModifyHardLinkedFile(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "go.mod")
+	link := filepath.Join(root, "CLAUDE.md")
+	original := []byte("module example.test/project\n")
+	writeFile(t, target, original)
+	if err := os.Link(target, link); err != nil {
+		t.Skipf("cannot create hard link in this environment: %v", err)
+	}
+
+	changed, err := harness.Claude().Sync(root, "run the linter")
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	assert.Equal(t, original, readFile(t, target), "hard-linked file was modified")
+	assert.Contains(t, string(readFile(t, link)), "<!-- gg-lint:claude:start -->")
+}
+
+func TestSyncRejectsNonRegularTarget(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, "CLAUDE.md"), 0o755))
+
+	_, err := harness.Claude().Sync(root, "run the linter")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a regular file")
+}
+
+func TestSyncPreservesModeAndLeavesNoTemporaryFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission bits are emulated on Windows")
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "CLAUDE.md")
+	writeFile(t, path, []byte("# Notes\n"))
+	require.NoError(t, os.Chmod(path, 0o600))
+
+	changed, err := harness.Claude().Sync(root, "run the linter")
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "CLAUDE.md", entries[0].Name())
+}
