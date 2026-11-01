@@ -28,6 +28,9 @@ type Pass struct {
 	TypeErrors []types.Error
 	// Inspector traverses Files and is built once per package.
 	Inspector *inspector.Inspector
+	// InScope reports whether a filename is part of the requested scan
+	// scope. It is nil when every file in the package is in scope.
+	InScope func(string) bool
 	// Report records a diagnostic for the running rule.
 	Report func(Diagnostic)
 
@@ -64,4 +67,13 @@ func (p *Pass) Source(f *ast.File) []byte {
 // IsTestFile reports whether f is a _test.go file.
 func (p *Pass) IsTestFile(f *ast.File) bool {
 	return strings.HasSuffix(p.Filename(f), "_test.go")
+}
+
+// FileInScope reports whether f is part of the requested scan scope. It
+// returns true when no scope predicate is set.
+func (p *Pass) FileInScope(f *ast.File) bool {
+	if p.InScope == nil {
+		return true
+	}
+	return p.InScope(p.Filename(f))
 }

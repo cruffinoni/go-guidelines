@@ -23,5 +23,10 @@ func Rules() []lint.Rule {
 		MethodCandidateForPointerReceiver{},
 		NoNilCheckForRequiredDependency{},
 		TopDownFunctionOrder{},
+		ConsistentReceivers{},
+		MaxFunctionParameters{},
+		TestIsolation{},
+		ErrorStringStyle{},
+		PreferErrorsAsType{},
 	}
 }

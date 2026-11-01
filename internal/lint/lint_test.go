@@ -67,3 +67,17 @@ func TestPassExposesSourceAndResolvesFindings(t *testing.T) {
 	finding := NewFinding(Meta{ID: "R1", Severity: SeverityWarning}, fset, got[0])
 	assert.Equal(t, Finding{RuleID: "R1", Severity: SeverityWarning, Message: "bad f", File: filename, Line: 3, Column: 6}, finding)
 }
+
+func TestPassFileInScope(t *testing.T) {
+	const filename = "/src/p/a.go"
+	src := []byte("package p\n")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filename, src, parser.ParseComments|parser.SkipObjectResolution)
+	require.NoError(t, err)
+
+	pass := NewPass(fset, []*ast.File{file}, map[string][]byte{filename: src}, func(Diagnostic) {})
+	assert.True(t, pass.FileInScope(file))
+
+	pass.InScope = func(name string) bool { return name != filename }
+	assert.False(t, pass.FileInScope(file))
+}
