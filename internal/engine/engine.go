@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"go/ast"
 	"runtime"
 	"slices"
 
@@ -24,12 +23,15 @@ type Options struct {
 	Workers int
 	// Rules selects which catalog rules are active. nil selects every rule.
 	Rules func(lint.Meta) bool
+	// Tests controls whether _test.go files and test-only package variants
+	// are loaded. nil keeps the default, true.
+	Tests *bool
 }
 
 // Result is the deterministic outcome of a Check.
 type Result struct {
 	// Files lists every in-scope analyzed file, absolute and sorted.
-	// Generated files are loaded for type checking but never listed or
+	// Generated files are loaded for analysis but never listed or
 	// reported on.
 	Files []string
 	// Findings is sorted with [lint.CompareFindings] and de-duplicated.
@@ -43,6 +45,7 @@ type Result struct {
 type Engine struct {
 	rules   []lint.Rule
 	workers int
+	tests   bool
 }
 
 // New builds an Engine over the rules of cat selected by opt.Rules.
@@ -57,24 +60,16 @@ func New(cat *catalog.Catalog, opt Options) *Engine {
 	if workers <= 0 {
 		workers = runtime.GOMAXPROCS(0)
 	}
-	return &Engine{rules: selected, workers: workers}
+	tests := true
+	if opt.Tests != nil {
+		tests = *opt.Tests
+	}
+	return &Engine{rules: selected, workers: workers, tests: tests}
 }
 
 // Rules returns the rules this Engine was built with.
 func (e *Engine) Rules() []lint.Rule {
 	return slices.Clone(e.rules)
-}
-
-// generatedFiles returns the names of pkg's files marked as generated, as
-// defined by [ast.IsGenerated].
-func generatedFiles(pkg *loader.Package) map[string]struct{} {
-	generated := make(map[string]struct{})
-	for _, f := range pkg.Syntax {
-		if ast.IsGenerated(f) {
-			generated[pkg.Fset.File(f.FileStart).Name()] = struct{}{}
-		}
-	}
-	return generated
 }
 
 // Check loads the packages under s and runs the Engine's rules against
@@ -84,9 +79,16 @@ func generatedFiles(pkg *loader.Package) map[string]struct{} {
 func (e *Engine) Check(ctx context.Context, s *scope.Set) (Result, error) {
 	needsTypes := slices.ContainsFunc(e.rules, func(r lint.Rule) bool { return r.Meta().NeedsTypes })
 
-	pkgs, err := loader.Load(ctx, loader.Config{Tests: true, NeedsTypes: needsTypes}, s.Paths()...)
+	pkgs, err := loader.Load(ctx, loader.Config{Tests: e.tests, NeedsTypes: needsTypes}, s.Paths()...)
 	if err != nil {
 		return Result{}, fmt.Errorf("load packages: %w", err)
+	}
+	if needsTypes {
+		for _, pkg := range pkgs {
+			if pkg.Types == nil || pkg.TypesInfo == nil || pkg.TypesSizes == nil {
+				return Result{}, fmt.Errorf("package %s: type information unavailable", pkg.ID)
+			}
+		}
 	}
 
 	var typeErrs []error
@@ -95,7 +97,7 @@ func (e *Engine) Check(ctx context.Context, s *scope.Set) (Result, error) {
 		for _, te := range pkg.TypeErrors {
 			typeErrs = append(typeErrs, fmt.Errorf("%s: %w", pkg.ID, te))
 		}
-		generated := generatedFiles(pkg)
+		generated := pkg.GeneratedFiles()
 		for _, f := range pkg.GoFiles {
 			if _, ok := generated[f]; ok {
 				continue

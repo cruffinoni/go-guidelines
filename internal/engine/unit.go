@@ -20,17 +20,19 @@ type target struct {
 // inScope so that findings outside the requested scope are never produced.
 func newTarget(pkg *loader.Package, inScope map[string]struct{}) target {
 	base := lint.NewPass(pkg.Fset, pkg.Syntax, pkg.Sources, nil)
-	if pkg.Types != nil {
-		base.Pkg = pkg.Types
-		base.TypesInfo = pkg.TypesInfo
-		base.TypesSizes = pkg.TypesSizes
-		base.TypeErrors = pkg.TypeErrors
-	}
+	base.Pkg = pkg.Types
+	base.TypesInfo = pkg.TypesInfo
+	base.TypesSizes = pkg.TypesSizes
+	base.TypeErrors = pkg.TypeErrors
 	kept := make(map[string]struct{}, len(pkg.GoFiles))
 	for _, f := range pkg.GoFiles {
 		if _, ok := inScope[f]; ok {
 			kept[f] = struct{}{}
 		}
+	}
+	base.InScope = func(filename string) bool {
+		_, ok := kept[filename]
+		return ok
 	}
 	return target{id: pkg.ID, base: base, inScope: kept}
 }
