@@ -2,7 +2,7 @@
 #
 # Usage:
 #   irm https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.ps1 | iex
-#   .\install.ps1 -Version v0.0.1 -BinDir C:\tools\bin
+#   .\install.ps1 -Version vX.Y.Z -BinDir C:\tools\bin
 #
 # Environment:
 #   GG_LINT_VERSION         Release tag (default: latest stable release)

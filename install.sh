@@ -3,7 +3,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.sh | sh
-#   curl -fsSL .../install.sh | sh -s -- --version v0.0.1 --bin-dir "$HOME/.local/bin"
+#   curl -fsSL .../install.sh | sh -s -- --version vX.Y.Z --bin-dir "$HOME/.local/bin"
 #
 # Environment:
 #   GG_LINT_VERSION   Release tag to install (default: latest stable release)

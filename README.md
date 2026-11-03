@@ -22,15 +22,16 @@ irm https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.ps
 ```
 
 Pin a release by passing the tag to the Unix installer, or by setting
-`GG_LINT_VERSION` before the Windows installer runs:
+`GG_LINT_VERSION` before the Windows installer runs. Replace `vX.Y.Z` with
+the release tag you want:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.sh \
-  | sh -s -- --version v0.0.1
+  | sh -s -- --version vX.Y.Z
 ```
 
 ```powershell
-$env:GG_LINT_VERSION = 'v0.0.1'
+$env:GG_LINT_VERSION = 'vX.Y.Z'
 irm https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.ps1 | iex
 ```
 

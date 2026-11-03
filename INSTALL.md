@@ -37,24 +37,25 @@ gg-lint version
 ```
 
 The version line should match the release you installed, for example
-`gg-lint 0.0.1`.
+`gg-lint <version>`.
 
 ## Pin a release
 
 For reproducible installs, pass the release tag. The scripts accept the tag
-with or without the leading `v`.
+with or without the leading `v`. Replace `vX.Y.Z` below with the tag you
+want.
 
 Linux and macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.sh \
-  | sh -s -- --version v0.0.1
+  | sh -s -- --version vX.Y.Z
 ```
 
 Windows:
 
 ```powershell
-$env:GG_LINT_VERSION = 'v0.0.1'
+$env:GG_LINT_VERSION = 'vX.Y.Z'
 irm https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.ps1 | iex
 ```
 
@@ -110,19 +111,20 @@ Other targets can be built from source; see the README.
 ## Manual install
 
 Download the archive and `checksums.txt` from the
-[v0.0.1 release](https://github.com/cruffinoni/go-guidelines/releases/tag/v0.0.1)
-(or replace `v0.0.1` with another tag), verify the checksum, and extract the
-binary.
+[latest release](https://github.com/cruffinoni/go-guidelines/releases/latest)
+or choose a tag on the
+[releases page](https://github.com/cruffinoni/go-guidelines/releases). Replace
+`vX.Y.Z` below with the tag you want; include the leading `v`.
 
 ### Linux and macOS
 
 ```sh
 set -eu
-version=0.0.1
+tag=vX.Y.Z
 os=linux          # or darwin
 arch=amd64        # or arm64
-base="https://github.com/cruffinoni/go-guidelines/releases/download/v${version}"
-archive="gg-lint_${version}_${os}_${arch}.tar.gz"
+base="https://github.com/cruffinoni/go-guidelines/releases/download/${tag}"
+archive="gg-lint_${tag#v}_${os}_${arch}.tar.gz"
 
 curl -fLO "$base/$archive"
 curl -fLO "$base/checksums.txt"
@@ -138,10 +140,11 @@ sudo install -m 0755 gg-lint /usr/local/bin/gg-lint
 In PowerShell:
 
 ```powershell
-$version = '0.0.1'
+$tag = 'vX.Y.Z'
 $arch = 'amd64'
-$archive = "gg-lint_${version}_windows_${arch}.zip"
-$base = "https://github.com/cruffinoni/go-guidelines/releases/download/v$version"
+$assetVersion = $tag.TrimStart('v')
+$archive = "gg-lint_${assetVersion}_windows_${arch}.zip"
+$base = "https://github.com/cruffinoni/go-guidelines/releases/download/$tag"
 
 Invoke-WebRequest "$base/$archive" -OutFile $archive
 Invoke-WebRequest "$base/checksums.txt" -OutFile checksums.txt
@@ -162,7 +165,7 @@ Add that directory to `PATH` if needed.
 With Go 1.27.3 or newer:
 
 ```sh
-go install github.com/cruffinoni/go-guidelines/cmd/gg-lint@v0.0.1
+go install github.com/cruffinoni/go-guidelines/cmd/gg-lint@latest
 ```
 
 `go install` builds from source and does not inject the release metadata, so
@@ -177,8 +180,9 @@ to `GITHUB_PATH`:
 ```yaml
 - name: Install gg-lint
   run: |
+    # Replace vX.Y.Z with the release tag you want to pin.
     curl -fsSL https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.sh \
-      | sh -s -- --version v0.0.1 --bin-dir "$HOME/.local/bin"
+      | sh -s -- --version vX.Y.Z --bin-dir "$HOME/.local/bin"
     echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 ```
 
