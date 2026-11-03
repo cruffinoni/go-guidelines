@@ -4,7 +4,38 @@
 
 ## Install
 
-Download the archive for your operating system and CPU from the [GitHub Releases page](https://github.com/cruffinoni/go-guidelines/releases). Verify the archive against `checksums.txt`, extract `gg-lint` (or `gg-lint.exe` on Windows), and place it on your `PATH`.
+One-line installers for Linux, macOS, and Windows download the release
+archive, verify it against `checksums.txt`, and install the binary. The Unix
+installer targets `~/.local/bin` (or `$XDG_BIN_HOME`) and prints the `PATH`
+line when needed; the Windows installer updates the user `PATH`.
+
+**Linux / macOS**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.sh | sh
+```
+
+**Windows (PowerShell 5.1+)**
+
+```powershell
+irm https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.ps1 | iex
+```
+
+Pin a release by passing the tag to the Unix installer, or by setting
+`GG_LINT_VERSION` before the Windows installer runs:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.sh \
+  | sh -s -- --version v0.0.1
+```
+
+```powershell
+$env:GG_LINT_VERSION = 'v0.0.1'
+irm https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.ps1 | iex
+```
+
+See [INSTALL.md](INSTALL.md) for manual installs, custom directories, CI
+examples, and uninstall steps.
 
 Check the installed build:
 
