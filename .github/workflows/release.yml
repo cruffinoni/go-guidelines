@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -38,10 +39,70 @@ jobs:
           else
             echo 'make_latest=true' >> "$GITHUB_OUTPUT"
           fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Require tag commit on master
+        shell: bash
+        run: |
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            printf 'Release tags must point to a commit on master.\n' >&2
+            exit 1
+          fi
+      - name: Wait for master CI
+        shell: bash
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          appear_deadline=$((SECONDS + 300))
+          run_id=""
+          while [[ -z "$run_id" ]]; do
+            runs=$(gh run list \
+              --commit "$GITHUB_SHA" \
+              --event push \
+              --limit 20 \
+              --json databaseId,status,conclusion,workflowName)
+            run_id=$(jq -r '[.[] | select(.workflowName == "CI" and .conclusion == "success")][0].databaseId // empty' <<<"$runs")
+            if [[ -n "$run_id" ]]; then
+              echo "Master CI already succeeded for $GITHUB_SHA."
+              exit 0
+            fi
+            run_id=$(jq -r '[.[] | select(.workflowName == "CI")][0].databaseId // empty' <<<"$runs")
+            if [[ -z "$run_id" ]]; then
+              if (( SECONDS >= appear_deadline )); then
+                echo "No CI run appeared for $GITHUB_SHA within 5 minutes." >&2
+                exit 1
+              fi
+              echo "Waiting for a CI run for $GITHUB_SHA to appear..."
+              sleep 10
+            fi
+          done
 
-  checks:
-    name: checks
-    uses: ./.github/workflows/checks.yml
+          echo "Waiting for CI run $run_id..."
+          completion_deadline=$((SECONDS + 1200))
+          while :; do
+            state=$(gh run view "$run_id" --json status,conclusion --jq '[.status, .conclusion] | @tsv')
+            status=${state%%$'\t'*}
+            conclusion=${state#*$'\t'}
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then
+                echo "Master CI succeeded for $GITHUB_SHA."
+                exit 0
+              fi
+              echo "Master CI for $GITHUB_SHA finished with conclusion: $conclusion" >&2
+              exit 1
+            fi
+            if (( SECONDS >= completion_deadline )); then
+              echo "Timed out waiting for CI run $run_id." >&2
+              exit 1
+            fi
+            echo "CI is $status; waiting..."
+            sleep 10
+          done
 
   provider-neutral-validation:
     name: provider-neutral-validation
@@ -87,7 +148,6 @@ jobs:
     name: publish-release
     needs:
       - validate-tag
-      - checks
       - provider-neutral-validation
     runs-on: ubuntu-latest
     permissions:
