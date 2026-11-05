@@ -2,6 +2,7 @@
 name: Documentation improvement
 about: Report missing, unclear, outdated, or incorrect documentation
 title: "[Docs]: "
+labels: documentation
 ---
 
 ### Affected documentation
