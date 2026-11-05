@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,24 +56,27 @@ func TestLoadRejectsInvalidFiles(t *testing.T) {
 	tests := map[string]struct {
 		content string
 		missing bool
-		want    string
+		wantErr error
 	}{
 		"multiple documents": {
 			content: "format: json\n---\nbogus_key: true\n",
-			want:    "multiple YAML documents",
+			wantErr: config.ErrMultipleDocuments,
 		},
 		"unknown key": {
 			content: "format: json\nbogus_key: 1\n",
-			want:    "line 2",
+			wantErr: config.ErrDecode,
 		},
 		"malformed yaml": {
 			content: "format: [json\n",
+			wantErr: config.ErrDecode,
 		},
 		"duplicate key": {
 			content: "format: json\nformat: text\n",
+			wantErr: config.ErrDecode,
 		},
 		"missing file": {
 			missing: true,
+			wantErr: fs.ErrNotExist,
 		},
 	}
 
@@ -86,10 +91,10 @@ func TestLoadRejectsInvalidFiles(t *testing.T) {
 
 			_, err := config.Load(path)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), path)
-			if tc.want != "" {
-				assert.Contains(t, err.Error(), tc.want)
-			}
+			require.ErrorIs(t, err, tc.wantErr)
+			fileErr, ok := errors.AsType[*config.FileError](err)
+			require.True(t, ok)
+			assert.Equal(t, path, fileErr.Path)
 		})
 	}
 }

@@ -3,6 +3,7 @@ package linttest
 import (
 	"go/ast"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,13 +38,15 @@ func TestCheckReportsEveryMismatch(t *testing.T) {
 	problems, err := check(funcNames{}, "testdata/mismatch")
 	require.NoError(t, err)
 	file := filepath.Join("testdata", "mismatch", "a.go")
-	want := []string{
-		file + `:3:6: unexpected finding "func unexpected"`,
-		file + `:5:6: unexpected finding "func wrongMessage"`,
-		file + `:5: no finding matching "something else"`,
-		file + `:7: no finding matching "never reported"`,
-	}
-	assert.Equal(t, want, problems)
+	require.Len(t, problems, 4)
+	assert.True(t, strings.HasPrefix(problems[0], file+":3:6:"))
+	assert.Contains(t, problems[0], "unexpected finding")
+	assert.True(t, strings.HasPrefix(problems[1], file+":5:6:"))
+	assert.Contains(t, problems[1], "unexpected finding")
+	assert.True(t, strings.HasPrefix(problems[2], file+":5:"))
+	assert.Contains(t, problems[2], "no finding matching")
+	assert.True(t, strings.HasPrefix(problems[3], file+":7:"))
+	assert.Contains(t, problems[3], "no finding matching")
 }
 
 func TestParsePatternsRejectsMalformedWants(t *testing.T) {

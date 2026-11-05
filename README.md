@@ -44,6 +44,16 @@ Check the installed build:
 gg-lint version
 ```
 
+Once installed, `gg-lint update` installs the latest stable release into the
+same directory as the install scripts (`$XDG_BIN_HOME` or `~/.local/bin` on
+Linux and macOS, `%LOCALAPPDATA%\Programs\gg-lint` on Windows) after
+verifying its SHA-256 checksum. Pass `--version` to install a specific tag,
+including prereleases such as `v1.2.3-rc.1`, and `--bin-dir` or
+`GG_LINT_BIN_DIR` to choose another directory. The install directory must be
+writable by the current user. On an interactive terminal it shows a
+step-by-step progress log with a download progress bar; `--quiet` prints only
+the final result and errors.
+
 ## Use
 
 ```sh
@@ -53,6 +63,8 @@ gg-lint scan --no-config --fail-on=error .   # CI: ignore repository config
 gg-lint rules
 gg-lint rules --format=markdown
 gg-lint sync-instructions --harness claude   # or codex
+gg-lint update
+gg-lint update --version v1.2.3-rc.1
 gg-lint version
 ```
 

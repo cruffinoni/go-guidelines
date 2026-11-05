@@ -44,3 +44,15 @@ This promotes `v2.4.1-rc.1` to `v2.4.1`; it does not increment the core. After s
 `.goreleaser.yaml` sets `release.prerelease: auto`, so a tag suffix such as `-alpha.1` is published as a prerelease. Stable tags have no suffix. `release.make_latest: true` allows stable releases to become latest; GitHub does not allow a release marked prerelease to be latest. Stable tags should be published monotonically; verify the actual `latest` pointer after the first real release.
 
 GoReleaser injects the tag version, commit, and build time into the Go CLI. The executable's `gg-lint version` output should therefore match the release tag (without the leading `v`).
+
+## Updater contract
+
+`gg-lint update` consumes the release assets directly. It resolves the latest
+stable tag from the `/releases/latest` redirect, then downloads
+`gg-lint_<version-without-v>_<os>_<arch>.tar.gz` (or `.zip` on Windows) and
+`checksums.txt` from that tag. A tag passed explicitly with `--version` may
+be a prerelease; the default path only follows GitHub's latest stable release.
+
+Changing `archives.name_template`, the Windows archive format, or
+`checksum.name_template` in `.goreleaser.yaml` therefore requires a matching
+change in `internal/update`.

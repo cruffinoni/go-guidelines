@@ -122,7 +122,9 @@ func TestLoad_ParseErrorIsFatal(t *testing.T) {
 
 	_, err := loader.Load(t.Context(), loader.Config{}, dir)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bad.go")
+	pkgErr, ok := errors.AsType[*loader.PackageError](err)
+	require.True(t, ok)
+	assert.Contains(t, pkgErr.Pos, "bad.go")
 }
 
 func TestLoad_SingleFile(t *testing.T) {
@@ -142,13 +144,27 @@ func TestLoad_FileOutsideModule(t *testing.T) {
 	assert.Len(t, pkgs, 1)
 }
 
+func TestLoad_NonGoPathIsAnError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "notes.txt")
+	writeFile(t, path, "notes\n")
+
+	_, err := loader.Load(t.Context(), loader.Config{}, path)
+	require.ErrorIs(t, err, loader.ErrNotGoFile)
+	pathErr, ok := errors.AsType[*loader.PathError](err)
+	require.True(t, ok)
+	assert.Equal(t, path, pathErr.Path)
+}
+
 func TestLoad_DirOutsideModuleIsAnError(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "foo.go"), "package foo\n")
 
 	_, err := loader.Load(t.Context(), loader.Config{}, dir)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "outside any Go module")
+	require.ErrorIs(t, err, loader.ErrOutsideModule)
+	pathErr, ok := errors.AsType[*loader.PathError](err)
+	require.True(t, ok)
+	assert.Equal(t, dir, pathErr.Path)
 }
 
 func TestLoad_FilesOutsideModulesInDifferentDirsAreAllKept(t *testing.T) {
@@ -195,10 +211,7 @@ func TestLoad_CanceledContext(t *testing.T) {
 	cancel()
 
 	_, err := loader.Load(ctx, loader.Config{}, "testdata/mod")
-	require.Error(t, err)
-	if !errors.Is(err, context.Canceled) {
-		assert.Contains(t, err.Error(), "context canceled")
-	}
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestLoad_GeneratedFiles(t *testing.T) {

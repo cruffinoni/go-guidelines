@@ -2,7 +2,6 @@ package engine
 
 import (
 	"errors"
-	"fmt"
 	"runtime/debug"
 
 	"github.com/cruffinoni/go-guidelines/internal/lint"
@@ -41,7 +40,7 @@ func newTarget(pkg *loader.Package, inScope map[string]struct{}) target {
 func check(rule lint.Rule, pass *lint.Pass) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("panic: %v\n%s", r, debug.Stack())
+			err = &PanicError{RuleID: rule.Meta().ID, Value: r, Stack: debug.Stack()}
 		}
 	}()
 	return rule.Check(pass)
@@ -64,14 +63,14 @@ func (t target) run(rule lint.Rule) ([]lint.Finding, error) {
 
 	var errs []error
 	if err := check(rule, &pass); err != nil {
-		errs = append(errs, fmt.Errorf("rule %s on package %s: %w", meta.ID, t.id, err))
+		errs = append(errs, &RuleError{RuleID: meta.ID, PackageID: t.id, Err: err})
 	}
 
 	fset := t.base.Fset
 	findings := make([]lint.Finding, 0, len(diags))
 	for _, d := range diags {
 		if !d.Pos.IsValid() || fset.File(d.Pos) == nil {
-			errs = append(errs, fmt.Errorf("rule %s on package %s: diagnostic has invalid position", meta.ID, t.id))
+			errs = append(errs, &InvalidPositionError{RuleID: meta.ID, PackageID: t.id})
 			continue
 		}
 		filename := fset.Position(d.Pos).Filename

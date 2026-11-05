@@ -39,6 +39,55 @@ gg-lint version
 The version line should match the release you installed, for example
 `gg-lint <version>`.
 
+## Update an existing install
+
+Once installed, run:
+
+```sh
+gg-lint update
+```
+
+The command resolves the latest stable release, downloads the archive for
+the current OS and CPU, verifies it against the release's `checksums.txt`,
+and installs `gg-lint` into the same directory as the install scripts:
+`$XDG_BIN_HOME` or `~/.local/bin` on Linux and macOS, and
+`%LOCALAPPDATA%\Programs\gg-lint` on Windows. Use `--bin-dir` or
+`GG_LINT_BIN_DIR` to choose another directory. The install directory must be
+writable by the current user; do not elevate the command unless you installed
+the binary with elevated permissions.
+
+The command installs into that directory even when the running binary lives
+elsewhere; the old copy is left in place. Update package-manager installs
+through their package manager instead.
+
+The command honors `GG_LINT_VERSION`, `GG_LINT_BIN_DIR`, and
+`GG_LINT_NO_PATH_UPDATE`, matching the installers. On Windows it adds the
+install directory to the user `PATH` when missing unless `--no-path-update`
+or `GG_LINT_NO_PATH_UPDATE=1` is set; restart your terminal afterward. On
+Linux and macOS it prints the `PATH` line when the directory is not on
+`PATH`.
+
+The command prints a step-by-step progress log on stderr. Interactive terminals
+get a spinner and a download progress bar; pipes and CI get plain lines.
+`--quiet` prints only the final result and errors.
+
+Pin a specific release, including a prerelease, with `--version`:
+
+```sh
+gg-lint update --version vX.Y.Z
+gg-lint update --version vX.Y.Z-rc.1
+gg-lint update --bin-dir "$HOME/.local/bin"
+gg-lint update --quiet
+```
+
+Without `--version`, prereleases are never selected. An explicit tag always
+installs, so it can also downgrade or repair an install.
+
+When updating the currently running executable on Windows, the previous
+binary may remain as `gg-lint.exe.old` until the process exits; the next
+update removes it. If latest-release resolution fails, for example through a
+proxy, pass `--version`.
+
 ## Pin a release
 
 For reproducible installs, pass the release tag. The scripts accept the tag
@@ -212,6 +261,17 @@ variable to remove it.
   add the line the Unix installer prints, or open a new terminal on Windows.
 - **Checksum mismatch**: the download was corrupted or an intermediate proxy
   changed it. Retry, and verify the tag and archive name.
+- **`gg-lint update` permission denied**: the install directory is not
+  writable by the current user; reinstall into a writable directory or rerun
+  with the permissions you used to install.
+- **`gg-lint update` cannot resolve the latest release**: pass
+  `--version vX.Y.Z` to skip latest-release discovery.
+- **`gg-lint update` installed somewhere else**: it installs into the
+  installer directory even when the running binary is elsewhere. Run the
+  installed path directly, or pass `--bin-dir` to choose another directory.
+- **`gg-lint update` could not replace the binary**: close other `gg-lint`
+  processes and retry; the update restores the old binary when replacement
+  fails.
 - **GitHub API rate limit**: the Windows installer prefers the release-page
   redirect and falls back to the API; pass `-Version` (or set
   `GG_LINT_VERSION`) to skip version discovery.
@@ -219,8 +279,9 @@ variable to remove it.
 
 ## Security
 
-The installers fetch the archive and `checksums.txt` over HTTPS and compare
-SHA-256 hashes before extracting. Checksums detect corruption and mismatched
-downloads; they do not prove that a release itself is trustworthy. Pin a
-version and review `install.sh` or `install.ps1` if your environment requires
+The installers and `gg-lint update` fetch the archive and `checksums.txt`
+over HTTPS and compare SHA-256 hashes before extracting or replacing the
+binary. Checksums detect corruption and mismatched downloads; they do not
+prove that a release itself is trustworthy. Pin a version and review
+`install.sh`, `install.ps1`, or the updater code if your environment requires
 it.

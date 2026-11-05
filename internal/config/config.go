@@ -30,23 +30,23 @@ func Load(path string) (File, error) {
 	var file File
 	data, err := os.Open(path)
 	if err != nil {
-		return file, fmt.Errorf("config %s: %w", path, err)
+		return file, &FileError{Path: path, Err: err}
 	}
 	defer data.Close()
 
 	dec := yaml.NewDecoder(data)
 	dec.KnownFields(true)
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
-		return file, fmt.Errorf("config %s: %w", path, err)
+		return file, &FileError{Path: path, Err: &DecodeError{Err: err}}
 	}
 	var extra any
 	switch err := dec.Decode(&extra); {
 	case errors.Is(err, io.EOF):
 		return file, nil
 	case err != nil:
-		return file, fmt.Errorf("config %s: %w", path, err)
+		return file, &FileError{Path: path, Err: &DecodeError{Err: err}}
 	default:
-		return file, fmt.Errorf("config %s: multiple YAML documents are not supported", path)
+		return file, &FileError{Path: path, Err: ErrMultipleDocuments}
 	}
 }
 

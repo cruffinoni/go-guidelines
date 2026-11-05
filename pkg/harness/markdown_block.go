@@ -51,19 +51,19 @@ func (m markdownBlock) render(original []byte, instructions string) ([]byte, boo
 	text := string(original)
 	startCount, endCount := strings.Count(text, start), strings.Count(text, end)
 	if startCount != endCount || startCount > 1 {
-		return nil, false, fmt.Errorf("malformed managed instruction markers: want no markers or one %q and one %q", start, end)
+		return nil, false, fmt.Errorf("%w: want no markers or one %q and one %q", ErrMalformedMarkers, start, end)
 	}
 
 	var startPos, endPos int
 	if startCount == 1 {
 		startPos, endPos = strings.Index(text, start), strings.Index(text, end)
 		if !markerIsStandaloneLine(original, start, startPos) || !markerIsStandaloneLine(original, end, endPos) {
-			return nil, false, errors.New("malformed managed instruction markers: each marker must occupy its own line")
+			return nil, false, fmt.Errorf("%w: each marker must occupy its own line", ErrMalformedMarkers)
 		}
 	}
 	for _, match := range anyMarkerPattern.FindAllString(text, -1) {
 		if match != start && match != end {
-			return nil, false, fmt.Errorf("malformed managed instruction markers: found marker for another harness %q", match)
+			return nil, false, fmt.Errorf("%w: found marker for another harness %q", ErrMalformedMarkers, match)
 		}
 	}
 
@@ -87,7 +87,7 @@ func (m markdownBlock) render(original []byte, instructions string) ([]byte, boo
 	}
 
 	if startPos > endPos {
-		return nil, false, errors.New("malformed managed instruction markers: end marker appears before start marker")
+		return nil, false, fmt.Errorf("%w: end marker appears before start marker", ErrMalformedMarkers)
 	}
 	endPos += len(end)
 	updated := make([]byte, 0, len(original)-(endPos-startPos)+len(block))
@@ -176,10 +176,10 @@ func (m markdownBlock) Sync(root, instructions string) (changed bool, err error)
 	switch {
 	case statErr == nil:
 		if info.Mode()&fs.ModeSymlink != 0 {
-			return false, fmt.Errorf("refusing to update %s: target is a symlink", m.file)
+			return false, &FileError{File: m.file, Op: "refusing to update", Err: ErrSymlinkTarget}
 		}
 		if !info.Mode().IsRegular() {
-			return false, fmt.Errorf("refusing to update %s: target is not a regular file", m.file)
+			return false, &FileError{File: m.file, Op: "refusing to update", Err: ErrNotRegularFile}
 		}
 		mode = info.Mode().Perm()
 		if original, err = rootDir.ReadFile(m.file); err != nil {
@@ -194,13 +194,13 @@ func (m markdownBlock) Sync(root, instructions string) (changed bool, err error)
 
 	updated, changed, err := m.render(original, instructions)
 	if err != nil {
-		return false, fmt.Errorf("%s: %w", m.file, err)
+		return false, &FileError{File: m.file, Err: err}
 	}
 	if !changed {
 		return false, nil
 	}
 	if err := m.writeAtomic(rootDir, updated, mode); err != nil {
-		return false, fmt.Errorf("write %s: %w", m.file, err)
+		return false, &FileError{File: m.file, Op: "write", Err: err}
 	}
 	return true, nil
 }

@@ -193,8 +193,10 @@ func TestCheck_PanicInOneRuleDoesNotStopOthers(t *testing.T) {
 
 	res, err := e.Check(t.Context(), s)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "panic:")
-	assert.Contains(t, err.Error(), "PANIC")
+	panicErr, ok := errors.AsType[*engine.PanicError](err)
+	require.True(t, ok)
+	assert.Equal(t, "PANIC", panicErr.RuleID)
+	assert.NotEmpty(t, panicErr.Stack)
 
 	found := false
 	for _, f := range res.Findings {
@@ -212,9 +214,11 @@ func TestCheck_ErrorPropagates(t *testing.T) {
 	s := newScope(t, []string{"testdata/mod"}, nil)
 
 	res, err := e.Check(t.Context(), s)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, sentinel)
-	assert.Contains(t, err.Error(), "ERR")
+	require.ErrorIs(t, err, sentinel)
+	ruleErr, ok := errors.AsType[*engine.RuleError](err)
+	require.True(t, ok)
+	assert.Equal(t, "ERR", ruleErr.RuleID)
+	assert.NotEmpty(t, ruleErr.PackageID)
 
 	found := false
 	for _, f := range res.Findings {
@@ -244,8 +248,10 @@ func TestCheck_InvalidPositionIsAnError(t *testing.T) {
 
 	res, err := e.Check(t.Context(), s)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid position")
-	assert.Contains(t, err.Error(), "BAD")
+	positionErr, ok := errors.AsType[*engine.InvalidPositionError](err)
+	require.True(t, ok)
+	assert.Equal(t, "BAD", positionErr.RuleID)
+	assert.NotEmpty(t, positionErr.PackageID)
 
 	for _, f := range res.Findings {
 		assert.NotEqual(t, "BAD", f.RuleID, "expected no finding from the invalid-position rule")

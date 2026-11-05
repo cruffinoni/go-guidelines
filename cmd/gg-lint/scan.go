@@ -22,6 +22,10 @@ import (
 	"github.com/cruffinoni/go-guidelines/pkg/report"
 )
 
+// errMultipleWorktrees identifies a scan whose paths span more than one Git
+// worktree, where project config discovery is ambiguous.
+var errMultipleWorktrees = errors.New("scan spans multiple Git worktrees")
+
 // scanFlags holds the raw flag values for one scan invocation.
 type scanFlags struct {
 	format       string
@@ -92,7 +96,7 @@ func resolveConfigPath(ctx context.Context, paths []string, explicit string, noC
 	case 1:
 		return config.Discover(roots[0])
 	default:
-		return "", fmt.Errorf("scan spans multiple Git worktrees (%s); pass --config or --no-config", strings.Join(roots, ", "))
+		return "", fmt.Errorf("%w (%s); pass --config or --no-config", errMultipleWorktrees, strings.Join(roots, ", "))
 	}
 }
 

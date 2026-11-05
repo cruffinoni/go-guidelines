@@ -3,9 +3,13 @@ package report
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 )
+
+// ErrUnknownFormat identifies an unsupported report format.
+var ErrUnknownFormat = errors.New("unknown format")
 
 // Finding is one reported issue, serialized in the JSON schema below.
 type Finding struct {
@@ -52,7 +56,7 @@ func ParseFormat(s string) (Format, error) {
 	case Text, JSON:
 		return Format(s), nil
 	default:
-		return "", fmt.Errorf("unknown format %q (want %q or %q)", s, Text, JSON)
+		return "", fmt.Errorf("%w %q (want %q or %q)", ErrUnknownFormat, s, Text, JSON)
 	}
 }
 
@@ -86,6 +90,6 @@ func (f Format) Write(w io.Writer, r Report) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("unknown format %q", f)
+		return fmt.Errorf("%w %q", ErrUnknownFormat, f)
 	}
 }

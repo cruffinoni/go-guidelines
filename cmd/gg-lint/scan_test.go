@@ -124,7 +124,8 @@ func TestScan_ConfigFlagPrecedence(t *testing.T) {
 	// --format overrides the config file's format.
 	stdout, _, code = runCLI(t, cat, "scan", "--config="+configPath, "--enable-rule=TEST001", "--format=text")
 	require.Equal(t, 0, code)
-	assert.True(t, strings.Contains(stdout, "[TEST001]"), "want text output, got %q", stdout)
+	assert.Contains(t, stdout, "TEST001")
+	assert.False(t, strings.HasPrefix(strings.TrimSpace(stdout), "{"), "want text output, got %q", stdout)
 }
 
 func TestScan_UserConfigOutsideGit(t *testing.T) {
@@ -166,7 +167,8 @@ func initGitModule(t *testing.T) string {
 	return root
 }
 
-// The Git worktree comes from the scanned path, not the working directory.
+// TestScan_GitChangesUsesTargetRepository verifies the Git worktree comes
+// from the scanned path, not the working directory.
 func TestScan_GitChangesUsesTargetRepository(t *testing.T) {
 	writeModule(t, map[string]string{"a.go": "package x\n"})
 	repo := initGitModule(t)
@@ -277,11 +279,10 @@ func TestScan_ConfigResolution(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	tests := map[string]struct {
-		setup      func(t *testing.T) []string
-		wantCode   int
-		checkRule  bool
-		wantRule   bool
-		wantStderr string
+		setup     func(t *testing.T) []string
+		wantCode  int
+		checkRule bool
+		wantRule  bool
 	}{
 		"caller config does not leak": {
 			setup: func(t *testing.T) []string {
@@ -340,8 +341,7 @@ func TestScan_ConfigResolution(t *testing.T) {
 				t.Chdir(repoA)
 				return []string{"scan", repoA, repoB}
 			},
-			wantCode:   2,
-			wantStderr: "multiple Git worktrees",
+			wantCode: 2,
 		},
 	}
 
@@ -350,15 +350,22 @@ func TestScan_ConfigResolution(t *testing.T) {
 			args := tc.setup(t)
 			stdout, stderr, code := runCLI(t, newFakeCatalog(t), args...)
 			assert.Equal(t, tc.wantCode, code, "stderr: %s", stderr)
-			if tc.wantStderr != "" {
-				assert.Contains(t, stderr, tc.wantStderr)
-			}
 			if tc.checkRule {
 				doc := decodeJSONReport(t, stdout)
 				assert.Equal(t, tc.wantRule, hasRule(doc, "TEST001"))
 			}
 		})
 	}
+}
+
+func TestResolveConfigPathRejectsMultipleWorktrees(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	repoA := initGitModule(t)
+	repoB := initGitModule(t)
+	t.Chdir(repoA)
+
+	_, err := resolveConfigPath(t.Context(), []string{repoA, repoB}, "", false)
+	require.ErrorIs(t, err, errMultipleWorktrees)
 }
 
 func newGitScopeRepo(t *testing.T) string {

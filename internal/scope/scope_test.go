@@ -1,6 +1,7 @@
 package scope_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,13 +23,16 @@ func writeGoFile(t *testing.T, path string) {
 
 func TestNew_RejectsEmptyPaths(t *testing.T) {
 	_, err := scope.New(nil, nil)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, scope.ErrNoPaths)
 }
 
 func TestNew_RejectsMissingPath(t *testing.T) {
 	dir := t.TempDir()
-	_, err := scope.New([]string{filepath.Join(dir, "missing.go")}, nil)
-	assert.ErrorContains(t, err, "inspect")
+	missing := filepath.Join(dir, "missing.go")
+	_, err := scope.New([]string{missing}, nil)
+	pathErr, ok := errors.AsType[*scope.PathError](err)
+	require.True(t, ok)
+	assert.Equal(t, missing, pathErr.Path)
 }
 
 func TestNew_RejectsNonGoFile(t *testing.T) {
@@ -37,7 +41,10 @@ func TestNew_RejectsNonGoFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte("x"), 0o644))
 
 	_, err := scope.New([]string{path}, nil)
-	assert.ErrorContains(t, err, "not a Go source file or directory")
+	assert.ErrorIs(t, err, scope.ErrNotGoSource)
+	pathErr, ok := errors.AsType[*scope.PathError](err)
+	require.True(t, ok)
+	assert.Equal(t, path, pathErr.Path)
 }
 
 func TestSet_Paths_ReturnsInputsInOrder(t *testing.T) {
@@ -111,7 +118,8 @@ func TestSet_Contains_Exclude(t *testing.T) {
 	assert.False(t, s.Contains(dropped))
 }
 
-// Exclude selectors need not exist on disk.
+// TestSet_Contains_SelectorsNeedNotExist verifies exclude selectors need not
+// exist on disk.
 func TestSet_Contains_SelectorsNeedNotExist(t *testing.T) {
 	dir := t.TempDir()
 	kept := filepath.Join(dir, "a.go")
