@@ -3,8 +3,6 @@
 package scope
 
 import (
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -26,17 +24,17 @@ type Set struct {
 // ["."].
 func New(paths, exclude []string) (*Set, error) {
 	if len(paths) == 0 {
-		return nil, errors.New("scope: no paths given")
+		return nil, ErrNoPaths
 	}
 
 	s := &Set{files: make(map[string]struct{}, len(paths))}
 	for _, p := range paths {
 		info, err := os.Stat(p)
 		if err != nil {
-			return nil, fmt.Errorf("inspect %s: %w", p, err)
+			return nil, &PathError{Path: p, Op: "inspect", Err: err}
 		}
 		if !info.IsDir() && filepath.Ext(p) != ".go" {
-			return nil, fmt.Errorf("%s is not a Go source file or directory", p)
+			return nil, &PathError{Path: p, Err: ErrNotGoSource}
 		}
 		abs, err := canonicalAbs(p)
 		if err != nil {

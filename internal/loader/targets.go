@@ -55,11 +55,11 @@ func groupByDir(paths []string) ([]dirGroup, error) {
 		}
 		info, err := os.Stat(abs)
 		if err != nil {
-			return nil, fmt.Errorf("stat %q: %w", p, err)
+			return nil, &PathError{Path: p, Op: "stat", Err: err}
 		}
 		isDir := info.IsDir()
 		if !isDir && !strings.HasSuffix(abs, ".go") {
-			return nil, fmt.Errorf("path %q is neither a directory nor a .go file", p)
+			return nil, &PathError{Path: p, Err: ErrNotGoFile}
 		}
 
 		searchDir := abs
@@ -69,7 +69,7 @@ func groupByDir(paths []string) ([]dirGroup, error) {
 		dir, ok := findModuleRoot(searchDir)
 		if !ok {
 			if isDir {
-				return nil, fmt.Errorf("directory %q is outside any Go module", p)
+				return nil, &PathError{Path: p, Err: ErrOutsideModule}
 			}
 			dir = searchDir
 		}
