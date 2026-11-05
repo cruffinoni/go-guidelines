@@ -2,6 +2,7 @@
 name: Feature request
 about: Suggest a new gg-lint feature or improvement
 title: "[Feature]: "
+labels: enhancement
 ---
 
 ### Problem or motivation
