@@ -2,6 +2,7 @@
 name: Bug report
 about: Report a gg-lint bug, incorrect diagnostic, or installation issue
 title: "[Bug]: "
+labels: bug
 ---
 
 ### Description
