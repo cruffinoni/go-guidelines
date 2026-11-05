@@ -115,7 +115,10 @@ declaration order, test isolation, error-string style, and `errors.AsType`.
 A few conventions remain review criteria because their intent is not reliably
 inferable: merging shared test setup into table-driven tests, sorting
 map-derived output before assertions, and judging whether a function exists
-solely to operate on one struct. GBP018 is a heuristic for the last case.
+solely to operate on one struct. GBP018 flags the single-parameter shape, and
+GBP027 adds advisory (`info`) ownership-aware diagnostics for helpers whose call
+paths and data usage are owned by one local struct; both remain heuristics rather
+than enforcement.
 
 Scanning a directory requires it to be inside a Go module (a `go.mod` in that
 directory or an ancestor); a single `.go` file can be scanned without one.
