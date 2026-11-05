@@ -2,6 +2,7 @@
 name: Go guideline proposal
 about: Propose a new or revised Go guideline or gg-lint rule
 title: "[Guideline]: "
+labels: guideline
 ---
 
 ### Guideline name
