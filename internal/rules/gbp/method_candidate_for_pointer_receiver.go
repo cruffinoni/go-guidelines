@@ -21,7 +21,8 @@ func (MethodCandidateForPointerReceiver) Meta() lint.Meta {
 		Description: "Reports a top-level function whose only parameter is a value or pointer to a " +
 			"defined struct type in the same package. A function that exists only to operate on one " +
 			"type's data is more discoverable, and keeps related logic co-located, as a method on that " +
-			"type. Constructors and functions with additional parameters are left to review.",
+			"type. Constructors and functions with additional parameters are left to review; GBP027 " +
+			"complements this rule for helpers with additional parameters or indirect call paths.",
 		Severity:   lint.SeverityInfo,
 		NeedsTypes: true,
 	}
