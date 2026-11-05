@@ -51,15 +51,21 @@ func localStructType(pass *lint.Pass, t types.Type) *types.Named {
 	return named
 }
 
+// isSingleStructParameter reports whether f has exactly one parameter whose
+// type is a local struct, the shape GBP018 reports.
+func isSingleStructParameter(pass *lint.Pass, f *ast.FuncDecl) bool {
+	if parameterCount(f.Type.Params) != 1 {
+		return false
+	}
+	return localStructType(pass, pass.TypesInfo.TypeOf(f.Type.Params.List[0].Type)) != nil
+}
+
 // Check reports functions that could be methods in pass.
 func (MethodCandidateForPointerReceiver) Check(pass *lint.Pass) error {
 	for _, file := range pass.Files {
 		for _, decl := range file.Decls {
 			f, ok := decl.(*ast.FuncDecl)
-			if !ok || f.Recv != nil || isConstructorName(f.Name.Name) || parameterCount(f.Type.Params) != 1 {
-				continue
-			}
-			if localStructType(pass, pass.TypesInfo.TypeOf(f.Type.Params.List[0].Type)) == nil {
+			if !ok || f.Recv != nil || isConstructorName(f.Name.Name) || !isSingleStructParameter(pass, f) {
 				continue
 			}
 			pass.Reportf(f.Pos(), "function taking a struct as its only parameter may belong as a method")
