@@ -318,6 +318,7 @@ func TestRunUnsupportedPlatform(t *testing.T) {
 				Version: "v0.0.2",
 				GOOS:    tt.goos,
 				GOARCH:  tt.goarch,
+				BinDir:  t.TempDir(),
 			})
 			require.ErrorIs(t, err, tt.wantErr)
 		})
