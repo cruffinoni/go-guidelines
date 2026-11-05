@@ -48,6 +48,7 @@ func newRootCommand(stdout, stderr io.Writer, cat *catalog.Catalog) *cobra.Comma
 		newScanCommand(cat),
 		newRulesCommand(cat),
 		newSyncInstructionsCommand(),
+		newUpdateCommand(),
 		newVersionCommand(),
 	)
 	return root
