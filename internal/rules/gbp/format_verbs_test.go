@@ -23,6 +23,7 @@ func TestArgumentVerbs(t *testing.T) {
 		{name: "escaped percent hides literal w", format: "progress 100%%w: %v", want: map[int]rune{1: 'v'}, ok: true},
 		{name: "star width consumes an argument", format: "%*d %s", want: map[int]rune{1: '*', 2: 'd', 3: 's'}, ok: true},
 		{name: "star precision consumes an argument", format: "%.*f %w", want: map[int]rune{1: '*', 2: 'f', 3: 'w'}, ok: true},
+		{name: "indexed width and precision", format: "%[3]*.[2]*[1]f", want: map[int]rune{3: '*', 2: '*', 1: 'f'}, ok: true},
 		{name: "flags", format: "%+q", want: map[int]rune{1: 'q'}, ok: true},
 		{name: "dangling percent", format: "100%", ok: false},
 		{name: "zero index", format: "%[0]s", ok: false},

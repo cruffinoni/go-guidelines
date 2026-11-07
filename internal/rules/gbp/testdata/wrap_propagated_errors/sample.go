@@ -111,3 +111,21 @@ func r(err error) string {
 func s(first, second error) error {
 	return fmt.Errorf("%s/%s", first.Error(), second.Error()) // want "with %w"
 }
+
+func t(err, contextErr error) error {
+	detail := err.Error()
+	return fmt.Errorf("%w: %s", contextErr, detail) // want "with %w"
+}
+
+func u(err error) error {
+	detail := err.Error()
+	detail = "static detail"
+	return fmt.Errorf("%s", detail)
+}
+
+func discard(string) string { return "redacted" }
+
+func v(err error) error {
+	detail := discard(err.Error())
+	return fmt.Errorf("%s", detail)
+}

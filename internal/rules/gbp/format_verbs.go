@@ -64,6 +64,11 @@ func argumentVerbs(format string) (verbs map[int]rune, ok bool) {
 		}
 		if i < len(format) && format[i] == '.' {
 			i++
+			// fmt permits an explicit argument index before a precision star,
+			// as in %[3]*.[2]*[1]f.
+			if !readIndex() {
+				return nil, false
+			}
 			if i < len(format) && format[i] == '*' {
 				verbs[next] = '*'
 				next++
