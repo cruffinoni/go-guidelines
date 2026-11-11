@@ -54,6 +54,25 @@ writable by the current user. On an interactive terminal it shows a
 step-by-step progress log with a download progress bar; `--quiet` prints only
 the final result and errors.
 
+### Local build
+
+From a checkout of this repository:
+
+```sh
+./install.sh --local
+./install.sh --local --bin-dir "$HOME/.local/bin"
+```
+
+```powershell
+.\install.ps1 -Local
+.\install.ps1 -Local -BinDir C:\tools\bin
+```
+
+Local mode builds `./cmd/gg-lint` with Go, skips the release download and
+checksum verification, and installs over the `gg-lint` found on PATH (or the
+default install directory). It never edits PATH. `GG_LINT_VERSION` is ignored
+in local mode; passing `--version` or `-Version` is an error.
+
 ## Use
 
 ```sh
