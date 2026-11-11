@@ -4,11 +4,15 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/cruffinoni/go-guidelines/master/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --version vX.Y.Z --bin-dir "$HOME/.local/bin"
+#   ./install.sh --local
 #
 # Environment:
 #   GG_LINT_VERSION   Release tag to install (default: latest stable release)
 #   GG_LINT_BIN_DIR   Directory to install into (default: $XDG_BIN_HOME or ~/.local/bin)
 set -eu
+
+local_mode=0
+version_flag=0
 
 repo="cruffinoni/go-guidelines"
 releases_url="https://github.com/${repo}/releases"
@@ -23,15 +27,109 @@ say() {
 	printf '%s\n' "$*"
 }
 
+# default_bin_dir prints the release installer's default install directory.
+default_bin_dir() {
+	if [ -n "${XDG_BIN_HOME:-}" ]; then
+		printf '%s\n' "$XDG_BIN_HOME"
+	elif [ -n "${HOME:-}" ]; then
+		printf '%s\n' "$HOME/.local/bin"
+	else
+		die "HOME is not set; pass --bin-dir"
+	fi
+}
+
+# resolve_source_root finds the checkout containing go.mod and cmd/gg-lint.
+resolve_source_root() {
+	script_dir=""
+	if [ -n "${0:-}" ]; then
+		script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || script_dir=""
+	fi
+	for candidate in "$script_dir" "$(pwd)"; do
+		[ -n "$candidate" ] || continue
+		if [ -f "$candidate/go.mod" ] && [ -d "$candidate/cmd/gg-lint" ]; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# resolve_target follows a symlink chain without requiring realpath.
+resolve_target() {
+	target_path=$1
+	hops=0
+	while [ -L "$target_path" ]; do
+		hops=$((hops + 1))
+		[ "$hops" -le 40 ] || die "too many symbolic links: $1"
+		target_link=$(readlink "$target_path") || die "could not read symlink $target_path"
+		case "$target_link" in
+		/*) target_path=$target_link ;;
+		*) target_path=$(dirname -- "$target_path")/$target_link ;;
+		esac
+	done
+	printf '%s\n' "$target_path"
+}
+
+# find_existing_binary returns the installed gg-lint path, if any.
+find_existing_binary() {
+	found=$(command -v gg-lint 2>/dev/null || true)
+	if [ -n "$found" ] && [ -f "$found" ] && [ -x "$found" ]; then
+		resolve_target "$found"
+	fi
+}
+
+# install_local builds gg-lint from the checkout and replaces the target.
+install_local() {
+	[ "$version_flag" -eq 0 ] || die "--local cannot be combined with --version"
+	[ -z "$version" ] || say "Ignoring release version in --local mode."
+	command -v go >/dev/null 2>&1 || die "go is required for --local"
+	source_root=$(resolve_source_root) || die "could not find a gg-lint checkout; run this script from the repository root"
+	if [ -n "$bin_dir" ]; then
+		target_dir=$bin_dir
+		target=$target_dir/gg-lint
+	else
+		existing=$(find_existing_binary)
+		if [ -n "$existing" ]; then
+			target=$existing
+			target_dir=$(dirname -- "$target")
+		else
+			target_dir=$(default_bin_dir)
+			target=$target_dir/gg-lint
+		fi
+	fi
+	[ -d "$target" ] && die "install target is a directory: $target"
+	mkdir -p "$target_dir" || die "could not create $target_dir"
+	[ -w "$target_dir" ] || die "install directory is not writable: $target_dir (use --bin-dir)"
+	build_tmp=$(mktemp "$target_dir/.gg-lint-local.XXXXXX") || die "could not create a temporary binary in $target_dir"
+	trap 'if [ -n "${build_tmp:-}" ]; then rm -f "$build_tmp"; fi' EXIT HUP INT TERM
+	say "Building gg-lint from source..."
+	if ! (cd "$source_root" && CGO_ENABLED=0 go build -trimpath -o "$build_tmp" ./cmd/gg-lint); then
+		die "go build failed"
+	fi
+	chmod 0755 "$build_tmp" || die "could not make $build_tmp executable"
+	mv -f "$build_tmp" "$target" || die "could not install to $target"
+	build_tmp=""
+	say "Installed gg-lint from source to $target"
+	case ":${PATH:-}:" in
+	*":$target_dir:"*) ;;
+	*)
+		say ""
+		say "Add $target_dir to your PATH:"
+		say "  export PATH=\"$target_dir:\$PATH\""
+		;;
+	esac
+}
+
 usage() {
 	cat <<'EOF'
-Install gg-lint from GitHub Releases.
+Install gg-lint from GitHub Releases, or build from a checkout with --local.
 
 Usage: install.sh [options]
 
 Options:
   --version <tag>   Release tag to install (default: latest stable release)
   --bin-dir <dir>   Directory to install into (default: ~/.local/bin)
+  --local           Build from the current checkout and replace the installed binary
   -h, --help        Show this help
 
 Environment:
@@ -48,10 +146,12 @@ while [ "$#" -gt 0 ]; do
 	--version)
 		[ "$#" -ge 2 ] || die "--version requires a value"
 		version=$2
+		version_flag=1
 		shift 2
 		;;
 	--version=*)
 		version=${1#--version=}
+		version_flag=1
 		shift
 		;;
 	--bin-dir)
@@ -63,6 +163,10 @@ while [ "$#" -gt 0 ]; do
 		bin_dir=${1#--bin-dir=}
 		shift
 		;;
+	--local)
+		local_mode=1
+		shift
+		;;
 	-h | --help)
 		usage
 		exit 0
@@ -72,6 +176,11 @@ while [ "$#" -gt 0 ]; do
 		;;
 	esac
 done
+
+if [ "$local_mode" -eq 1 ]; then
+	install_local
+	exit 0
+fi
 
 if [ -z "$bin_dir" ]; then
 	if [ -n "${XDG_BIN_HOME:-}" ]; then

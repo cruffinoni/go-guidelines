@@ -39,6 +39,31 @@ gg-lint version
 The version line should match the release you installed, for example
 `gg-lint <version>`.
 
+## Local build
+
+The installers can build the current working tree and replace the installed
+binary. This requires Go and a checkout of this repository.
+
+Linux and macOS:
+
+```sh
+./install.sh --local
+./install.sh --local --bin-dir "$HOME/.local/bin"
+```
+
+Windows:
+
+```powershell
+.\install.ps1 -Local
+.\install.ps1 -Local -BinDir C:\tools\bin
+```
+
+Local mode builds `./cmd/gg-lint` with `CGO_ENABLED=0` and installs over the
+`gg-lint` found on PATH, or the default directory when no binary is found.
+`--bin-dir` and `-BinDir` choose another target. It does not download a
+release, verify a checksum, or modify PATH. `GG_LINT_VERSION` is ignored in
+local mode; passing `--version` or `-Version` is an error.
+
 ## Update an existing install
 
 Once installed, run:
