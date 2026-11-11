@@ -54,7 +54,7 @@ func replaceExecutable(target string, data []byte) error {
 	}
 	if err := os.Rename(temp, target); err != nil {
 		if restoreErr := os.Rename(backup, target); restoreErr != nil {
-			return fmt.Errorf("move new executable into place: %w; restore %s failed: %v", err, backup, restoreErr)
+			return fmt.Errorf("move new executable into place: %w; restore %s failed: %w", err, backup, restoreErr)
 		}
 		return fmt.Errorf("move new executable into place: %w", err)
 	}
