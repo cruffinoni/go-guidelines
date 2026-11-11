@@ -28,5 +28,6 @@ func Rules() []lint.Rule {
 		TestIsolation{},
 		ErrorStringStyle{},
 		PreferErrorsAsType{},
+		TypeOwnedHelper{},
 	}
 }
