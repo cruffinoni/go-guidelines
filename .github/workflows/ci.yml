@@ -19,6 +19,7 @@ jobs:
   format-check:
     name: checks / format-check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -41,6 +42,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -61,6 +63,7 @@ jobs:
   race-tests:
     name: checks / race-tests (ubuntu-latest)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -73,6 +76,7 @@ jobs:
   security:
     name: checks / security (govulncheck)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
