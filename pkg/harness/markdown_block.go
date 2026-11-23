@@ -19,14 +19,18 @@ var anyMarkerPattern = regexp.MustCompile(`<!-- gg-lint:([a-z0-9-]+):(start|end)
 
 // markdownBlock is a [Harness] that keeps one managed block, delimited by
 // "<!-- gg-lint:<name>:start -->" and "<!-- gg-lint:<name>:end -->" marker
-// lines, inside a single Markdown file at the project root.
+// lines, inside a single Markdown file.
 type markdownBlock struct {
-	name string
-	file string
+	name    string
+	file    string
+	userDir func() (string, error)
 }
 
 // Name returns the harness name embedded in the block markers.
 func (m markdownBlock) Name() string { return m.name }
+
+// UserDir returns the directory holding the user-level instruction file.
+func (m markdownBlock) UserDir() (string, error) { return m.userDir() }
 
 func (m markdownBlock) startMarker() string { return fmt.Sprintf("<!-- gg-lint:%s:start -->", m.name) }
 func (m markdownBlock) endMarker() string   { return fmt.Sprintf("<!-- gg-lint:%s:end -->", m.name) }
@@ -157,16 +161,16 @@ func (m markdownBlock) writeAtomic(rootDir *os.Root, data []byte, mode fs.FileMo
 	return nil
 }
 
-// Sync rewrites root/m.file so it contains exactly one managed block
+// Sync rewrites dir/m.file so it contains exactly one managed block
 // holding instructions, replacing an existing block in place or appending
 // one. Every byte outside the block, and any CRLF line endings, are
 // preserved. A no-op sync performs no write. Writes replace the directory
-// entry atomically and never escape root; a symlink or other non-regular
+// entry atomically and never escape dir; a symlink or other non-regular
 // target is refused.
-func (m markdownBlock) Sync(root, instructions string) (changed bool, err error) {
-	rootDir, err := os.OpenRoot(root)
+func (m markdownBlock) Sync(dir, instructions string) (changed bool, err error) {
+	rootDir, err := os.OpenRoot(dir)
 	if err != nil {
-		return false, fmt.Errorf("open project root %s: %w", root, err)
+		return false, fmt.Errorf("open instruction directory %s: %w", dir, err)
 	}
 	defer rootDir.Close()
 

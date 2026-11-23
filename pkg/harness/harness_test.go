@@ -264,3 +264,29 @@ func TestSyncPreservesModeAndLeavesNoTemporaryFiles(t *testing.T) {
 	require.Len(t, entries, 1)
 	assert.Equal(t, "CLAUDE.md", entries[0].Name())
 }
+
+func TestUserDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir uses USERPROFILE on Windows
+	override := t.TempDir()
+	tests := map[string]struct {
+		h        harness.Harness
+		env, val string
+		want     string
+	}{
+		"claude default":           {h: harness.Claude(), env: "CLAUDE_CONFIG_DIR", want: filepath.Join(home, ".claude")},
+		"claude absolute override": {h: harness.Claude(), env: "CLAUDE_CONFIG_DIR", val: override, want: override},
+		"claude relative ignored":  {h: harness.Claude(), env: "CLAUDE_CONFIG_DIR", val: "rel", want: filepath.Join(home, ".claude")},
+		"codex default":            {h: harness.Codex(), env: "CODEX_HOME", want: filepath.Join(home, ".codex")},
+		"codex absolute override":  {h: harness.Codex(), env: "CODEX_HOME", val: override, want: override},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(tc.env, tc.val)
+			got, err := tc.h.UserDir()
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
