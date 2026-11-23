@@ -1,11 +1,13 @@
 package harness
 
-// Claude returns the harness that keeps a managed block in CLAUDE.md. Its
-// user-level file lives in $CLAUDE_CONFIG_DIR, or ~/.claude when unset.
-func Claude() Harness {
-	return markdownBlock{
-		name:    "claude",
-		file:    "CLAUDE.md",
-		userDir: func() (string, error) { return homeSubdir("CLAUDE_CONFIG_DIR", ".claude") },
+// newClaude returns the Claude Code harness. Its user-level file is
+// CLAUDE.md in $CLAUDE_CONFIG_DIR (default ~/.claude), and its project-level
+// file is ./CLAUDE.md.
+func newClaude() Harness {
+	return instructionFile{
+		name:      "claude",
+		userBase:  inEnvOrHome("CLAUDE_CONFIG_DIR", ".claude"),
+		userFile:  "CLAUDE.md",
+		localFile: "CLAUDE.md",
 	}
 }

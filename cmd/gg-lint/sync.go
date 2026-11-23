@@ -1,8 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"path/filepath"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -32,41 +33,44 @@ func newSyncInstructionsCommand() *cobra.Command {
 	var local, user bool
 	names := harnessNames()
 	cmd := &cobra.Command{
-		Use:       fmt.Sprintf("sync-instructions <%s>", strings.Join(names, "|")),
-		Short:     "Keep a coding-agent harness's instructions current.",
-		Long:      "Keep a coding-agent harness's instructions current. By default, or with\n--user, the harness's user-level file is updated (~/.claude/CLAUDE.md,\n~/.codex/AGENTS.md); with --local, the file in the current directory is.",
+		Use:   "sync-instructions <harness>",
+		Short: "Keep a coding-agent harness's instructions current.",
+		Long: "Keep a coding-agent harness's instructions current. By default, or with\n" +
+			"--user, the harness's user-level file is updated (for example\n" +
+			"~/.claude/CLAUDE.md); its directory must already exist. With --local, the\n" +
+			"project-level file under the current directory is updated (for example\n" +
+			"./CLAUDE.md). Harnesses that share a file share one gg-lint block.\n\n" +
+			"Harnesses: " + strings.Join(names, ", ") + ".",
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: names,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			h, ok := harness.Lookup(args[0])
 			if !ok {
-				return fmt.Errorf("unknown harness %q (want one of %s)", args[0], strings.Join(names, ", "))
+				return fmt.Errorf("unknown harness %q (run gg-lint sync-instructions --help for the list)", args[0])
 			}
-			scope, dir := "user", "."
+			scope, other := harness.User, "--local"
 			if local {
-				scope = "local"
-			} else {
-				var err error
-				if dir, err = h.UserDir(); err != nil {
-					return fmt.Errorf("resolve %s user directory: %w", h.Name(), err)
-				}
+				scope, other = harness.Local, "--user"
 			}
-			if abs, err := filepath.Abs(dir); err == nil {
-				dir = abs
-			}
-			changed, err := h.Sync(dir, instructions)
+			cwd, err := os.Getwd()
 			if err != nil {
-				return fmt.Errorf("sync %s %s instructions in %s: %w", h.Name(), scope, dir, err)
+				return fmt.Errorf("get working directory: %w", err)
 			}
-			if changed {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Updated %s %s instructions in %s.\n", h.Name(), scope, dir)
-			} else {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s instructions already current in %s.\n", h.Name(), scope, dir)
+			path, changed, err := h.Sync(scope, cwd, instructions)
+			switch {
+			case errors.Is(err, harness.ErrUnsupportedScope):
+				return fmt.Errorf("%w; use %s", err, other)
+			case err != nil:
+				return fmt.Errorf("sync %s %s instructions: %w", h.Name(), scope, err)
+			case changed:
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Updated %s %s instructions: %s\n", h.Name(), scope, path)
+			default:
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s instructions already current: %s\n", h.Name(), scope, path)
 			}
 			return err
 		},
 	}
-	cmd.Flags().BoolVar(&local, "local", false, "update the instruction file in the current directory")
+	cmd.Flags().BoolVar(&local, "local", false, "update the project-level instruction file under the current directory")
 	cmd.Flags().BoolVar(&user, "user", false, "update the harness's user-level instruction file (default)")
 	cmd.MarkFlagsMutuallyExclusive("local", "user")
 	return cmd

@@ -1,9 +1,11 @@
-package harness_test
+package harness
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -11,8 +13,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/cruffinoni/go-guidelines/pkg/harness"
 )
 
 func writeFile(t *testing.T, path string, content []byte) {
@@ -27,131 +27,174 @@ func readFile(t *testing.T, path string) []byte {
 	return content
 }
 
-// betweenMarkers returns the text between start and end, if both exist once.
-func betweenMarkers(content, start, end string) (string, bool) {
-	_, after, ok := strings.Cut(content, start)
-	if !ok {
-		return "", false
+// isolateHome points every base resolver at a fresh, empty home directory
+// and returns it.
+func isolateHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir uses USERPROFILE on Windows
+	for _, env := range []string{"XDG_CONFIG_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"} {
+		t.Setenv(env, "")
 	}
-	between, _, ok := strings.Cut(after, end)
-	return between, ok
+	return home
 }
 
-func TestAllReturnsHarnessesInNameOrder(t *testing.T) {
-	names := make([]string, 0)
-	for _, h := range harness.All() {
+// fixture returns a harness whose local file is NOTES.md and whose user file
+// is nested/USER.md under userBase.
+func fixture(userBase string) instructionFile {
+	return instructionFile{
+		name:      "fixture",
+		userBase:  func() (string, error) { return userBase, nil },
+		userFile:  "nested/USER.md",
+		localFile: "NOTES.md",
+	}
+}
+
+// syncLocal syncs the fixture's local file in dir and returns its path.
+func syncLocal(t *testing.T, dir, instructions string) (string, bool, error) {
+	t.Helper()
+	return fixture("").Sync(Local, dir, instructions)
+}
+
+var kebabCase = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+func TestAllNamesAreUniqueSortedAndKebabCase(t *testing.T) {
+	var names []string
+	for _, h := range All() {
+		assert.Regexp(t, kebabCase, h.Name())
 		names = append(names, h.Name())
 	}
-	assert.Equal(t, []string{"claude", "codex"}, names)
+	assert.True(t, slices.IsSorted(names), "All() not in name order: %v", names)
+	assert.Len(t, slices.Compact(slices.Clone(names)), len(names), "duplicate names: %v", names)
 }
 
-func TestLookupFindsARegisteredHarness(t *testing.T) {
-	h, ok := harness.Lookup("codex")
-	require.True(t, ok)
-	assert.Equal(t, "codex", h.Name())
-}
-
-func TestLookupReportsAnUnknownHarness(t *testing.T) {
-	_, ok := harness.Lookup("cursor")
+func TestLookup(t *testing.T) {
+	for _, want := range All() {
+		got, ok := Lookup(want.Name())
+		require.True(t, ok, want.Name())
+		assert.Equal(t, want.Name(), got.Name())
+	}
+	_, ok := Lookup("no-such-harness")
 	assert.False(t, ok)
 }
 
-func TestSyncCreatesOnlyTheSelectedProjectFile(t *testing.T) {
-	root := t.TempDir()
-	claude := filepath.Join(root, "CLAUDE.md")
-	codex := filepath.Join(root, "AGENTS.md")
-	writeFile(t, claude, []byte("# My Claude notes\n"))
-	writeFile(t, codex, []byte("# My Codex notes\n"))
+// assertSyncs checks that syncing f for scope creates want, starting with
+// f's header, and that a repeat sync is a no-op.
+func assertSyncs(t *testing.T, f instructionFile, scope Scope, project, want string) {
+	t.Helper()
+	got, changed, err := f.Sync(scope, project, "run the linter")
+	require.NoError(t, err, scope)
+	assert.Equal(t, want, got, scope)
+	assert.True(t, changed, scope)
+	content := string(readFile(t, want))
+	assert.True(t, strings.HasPrefix(content, f.header), "%s: header missing from %q", scope, content)
+	assert.Contains(t, content, startMarker+"\nrun the linter\n"+endMarker+"\n", scope)
 
-	changed, err := harness.Claude().Sync(root, "run the linter")
-	require.NoError(t, err)
-	assert.True(t, changed)
-
-	got := string(readFile(t, claude))
-	assert.Regexp(t, `^# My Claude notes\n`, got)
-	assert.Contains(t, got, "<!-- gg-lint:claude:start -->")
-	assert.Contains(t, got, "<!-- gg-lint:claude:end -->")
-	assert.Equal(t, "# My Codex notes\n", string(readFile(t, codex)), "unselected AGENTS.md changed")
+	_, changed, err = f.Sync(scope, project, "run the linter")
+	require.NoError(t, err, scope)
+	assert.False(t, changed, "%s: repeat sync reported a change", scope)
 }
 
-func TestSyncWritesInstructionsInsideManagedBlock(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "CLAUDE.md")
-	instructions := "run the linter"
+func TestSyncEveryHarnessAndScope(t *testing.T) {
+	for _, h := range All() {
+		f, ok := h.(instructionFile)
+		require.True(t, ok, "%s is not an instructionFile", h.Name())
+		t.Run(f.name, func(t *testing.T) {
+			isolateHome(t)
+			project := t.TempDir()
 
-	changed, err := harness.Claude().Sync(root, instructions)
-	require.NoError(t, err)
-	require.True(t, changed)
+			if f.userBase == nil {
+				_, _, err := f.Sync(User, project, "run the linter")
+				assert.ErrorIs(t, err, ErrUnsupportedScope)
+			} else {
+				base, err := f.userBase()
+				require.NoError(t, err)
+				_, _, err = f.Sync(User, project, "run the linter")
+				require.ErrorIs(t, err, fs.ErrNotExist, "user sync must require an existing base")
+				assert.NoDirExists(t, base)
 
-	content := string(readFile(t, path))
-	start := "<!-- gg-lint:claude:start -->"
-	end := "<!-- gg-lint:claude:end -->"
-	between, ok := betweenMarkers(content, start, end)
-	require.True(t, ok, "managed block markers not found in %q", content)
-	assert.Contains(t, between, instructions)
+				require.NoError(t, os.MkdirAll(base, 0o755))
+				assertSyncs(t, f, User, project, filepath.Join(base, filepath.FromSlash(f.userFile)))
+			}
 
-	changed, err = harness.Claude().Sync(root, "run the tests")
-	require.NoError(t, err)
-	require.True(t, changed)
-	content = string(readFile(t, path))
-	between, ok = betweenMarkers(content, start, end)
-	require.True(t, ok)
-	assert.Contains(t, between, "run the tests")
-	assert.NotContains(t, between, instructions)
+			if f.localFile == "" {
+				_, _, err := f.Sync(Local, project, "run the linter")
+				assert.ErrorIs(t, err, ErrUnsupportedScope)
+			} else {
+				assertSyncs(t, f, Local, project, filepath.Join(project, filepath.FromSlash(f.localFile)))
+			}
+		})
+	}
 }
 
-func TestSyncRefreshesTheManagedBlockWithoutChangingSurroundingBytes(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "CLAUDE.md")
-	prefix := []byte("user prefix\r\n")
-	suffix := []byte("\r\nuser suffix\x00\n")
-	writeFile(t, path, slices.Concat(prefix, []byte("<!-- gg-lint:claude:start -->\r\nold\r\n<!-- gg-lint:claude:end -->"), suffix))
+func TestSyncReplacesTheBlockWithoutChangingSurroundingBytes(t *testing.T) {
+	for name, block := range map[string]string{
+		"current": startMarker + "\r\nold\r\n" + endMarker,
+		"legacy":  "<!-- gg-lint:claude:start -->\r\nold\r\n<!-- gg-lint:claude:end -->",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "NOTES.md")
+			prefix := []byte("user prefix\r\n")
+			suffix := []byte("\r\nuser suffix\x00\n")
+			writeFile(t, path, slices.Concat(prefix, []byte(block), suffix))
 
-	changed, err := harness.Claude().Sync(root, "run the linter")
+			_, changed, err := syncLocal(t, dir, "run the linter")
+			require.NoError(t, err)
+			assert.True(t, changed)
+
+			first := readFile(t, path)
+			assert.Equal(t, slices.Concat(prefix, []byte(startMarker+"\r\nrun the linter\r\n"+endMarker), suffix), first)
+
+			before, err := os.Stat(path)
+			require.NoError(t, err)
+			_, changed, err = syncLocal(t, dir, "run the linter")
+			require.NoError(t, err)
+			assert.False(t, changed, "no-op sync reported a change")
+			after, err := os.Stat(path)
+			require.NoError(t, err)
+			assert.Equal(t, before.ModTime(), after.ModTime(), "no-op sync wrote the file")
+			assert.Equal(t, first, readFile(t, path), "repeat sync was not byte-idempotent")
+		})
+	}
+}
+
+func TestSyncAppendsBelowExistingContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "NOTES.md")
+	writeFile(t, path, []byte("# My notes"))
+
+	_, changed, err := syncLocal(t, dir, "run the linter")
 	require.NoError(t, err)
 	assert.True(t, changed)
+	assert.Equal(t, "# My notes\n\n"+startMarker+"\nrun the linter\n"+endMarker+"\n", string(readFile(t, path)))
+}
 
-	first := readFile(t, path)
-	assert.Equal(t, prefix, first[:len(prefix)])
-	assert.Equal(t, suffix, first[len(first)-len(suffix):])
-	assert.NotContains(t, string(first), "old")
-
-	before, err := os.Stat(path)
+func TestSyncCreatesMissingParentsUnderTheUserBase(t *testing.T) {
+	base := t.TempDir()
+	path, changed, err := fixture(base).Sync(User, "", "run the linter")
 	require.NoError(t, err)
-
-	changed, err = harness.Claude().Sync(root, "run the linter")
-	require.NoError(t, err)
-	assert.False(t, changed, "no-op sync reported a change")
-
-	after, err := os.Stat(path)
-	require.NoError(t, err)
-	assert.Equal(t, before.ModTime(), after.ModTime(), "no-op sync wrote the file")
-	assert.Equal(t, first, readFile(t, path), "repeat sync was not byte-idempotent")
+	assert.True(t, changed)
+	assert.Equal(t, filepath.Join(base, "nested", "USER.md"), path)
+	assert.FileExists(t, path)
 }
 
 func TestSyncRefusesASymlinkTarget(t *testing.T) {
-	root := t.TempDir()
+	dir := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "global-instructions.md")
 	writeFile(t, outside, []byte("keep these bytes\n"))
-	if err := os.Symlink(outside, filepath.Join(root, "CLAUDE.md")); err != nil {
+	link := filepath.Join(dir, "NOTES.md")
+	if err := os.Symlink(outside, link); err != nil {
 		t.Skipf("cannot create symlink in this environment: %v", err)
 	}
 
-	_, err := harness.Claude().Sync(root, "run the linter")
-	require.ErrorIs(t, err, harness.ErrSymlinkTarget)
-	fileErr, ok := errors.AsType[*harness.FileError](err)
+	_, _, err := syncLocal(t, dir, "run the linter")
+	require.ErrorIs(t, err, ErrSymlinkTarget)
+	fileErr, ok := errors.AsType[*FileError](err)
 	require.True(t, ok)
-	assert.Equal(t, "CLAUDE.md", fileErr.File)
+	assert.Equal(t, link, fileErr.File)
 	assert.Equal(t, "keep these bytes\n", string(readFile(t, outside)), "external target changed")
-}
-
-func TestSyncCreatesAMissingFile(t *testing.T) {
-	root := t.TempDir()
-
-	changed, err := harness.Codex().Sync(root, "run the linter")
-	require.NoError(t, err)
-	assert.True(t, changed)
-	assert.FileExists(t, filepath.Join(root, "AGENTS.md"))
 }
 
 func TestSyncReportsAWriteFailureWithoutLeavingAFile(t *testing.T) {
@@ -161,130 +204,115 @@ func TestSyncReportsAWriteFailureWithoutLeavingAFile(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses directory permission checks")
 	}
-	root := t.TempDir()
-	require.NoError(t, os.Chmod(root, 0o555))
-	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0o555))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
 
-	_, err := harness.Claude().Sync(root, "run the linter")
+	_, _, err := syncLocal(t, dir, "run the linter")
 	assert.Error(t, err)
-	assert.NoFileExists(t, filepath.Join(root, "CLAUDE.md"))
+	assert.NoFileExists(t, filepath.Join(dir, "NOTES.md"))
 }
 
 func TestSyncRejectsMalformedMarkersWithoutWriting(t *testing.T) {
-	const start = "<!-- gg-lint:claude:start -->"
-	const end = "<!-- gg-lint:claude:end -->"
-	const codexStart = "<!-- gg-lint:codex:start -->"
-	const codexEnd = "<!-- gg-lint:codex:end -->"
+	const legacyStart = "<!-- gg-lint:claude:start -->"
+	const legacyEnd = "<!-- gg-lint:claude:end -->"
 	tests := map[string]string{
-		"duplicate start": start + "\n" + start + "\n" + end,
-		"unmatched start": start + "\nuser content",
-		"unmatched end":   end + "\n",
-		"reversed":        end + "\n" + start,
-		"nested":          start + "\n" + start + "\n" + end + "\n" + end,
-		"crossed":         start + "\n" + codexStart + "\n" + end + "\n" + codexEnd,
-		"inline markers":  "prefix " + start + "\nold\n" + end + " suffix",
+		"duplicate start":        startMarker + "\n" + startMarker + "\n" + endMarker,
+		"unmatched start":        startMarker + "\nuser content",
+		"unmatched end":          endMarker + "\n",
+		"reversed":               endMarker + "\n" + startMarker,
+		"two blocks":             startMarker + "\n" + endMarker + "\n" + legacyStart + "\n" + legacyEnd,
+		"current and legacy mix": startMarker + "\nold\n" + legacyEnd,
+		"two legacy harnesses":   legacyStart + "\nold\n<!-- gg-lint:codex:end -->",
+		"inline markers":         "prefix " + startMarker + "\nold\n" + endMarker + " suffix",
 	}
 	for name, content := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			root := t.TempDir()
-			path := filepath.Join(root, "CLAUDE.md")
+			dir := t.TempDir()
+			path := filepath.Join(dir, "NOTES.md")
 			before := []byte("head\n" + content + "\ntail\n")
 			writeFile(t, path, before)
 
-			_, err := harness.Claude().Sync(root, "run the linter")
-			require.ErrorIs(t, err, harness.ErrMalformedMarkers)
-			fileErr, ok := errors.AsType[*harness.FileError](err)
+			_, _, err := syncLocal(t, dir, "run the linter")
+			require.ErrorIs(t, err, ErrMalformedMarkers)
+			fileErr, ok := errors.AsType[*FileError](err)
 			require.True(t, ok)
-			assert.Equal(t, "CLAUDE.md", fileErr.File)
+			assert.Equal(t, path, fileErr.File)
 			assert.Equal(t, before, readFile(t, path), "malformed file changed")
 		})
 	}
 }
 
-func TestSyncRejectsAForeignHarnessMarker(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "CLAUDE.md")
-	before := []byte("head\n<!-- gg-lint:cursor:start -->\nold\n<!-- gg-lint:cursor:end -->\ntail\n")
-	writeFile(t, path, before)
-
-	_, err := harness.Claude().Sync(root, "run the linter")
-	require.ErrorIs(t, err, harness.ErrMalformedMarkers)
-	fileErr, ok := errors.AsType[*harness.FileError](err)
-	require.True(t, ok)
-	assert.Equal(t, "CLAUDE.md", fileErr.File)
-	assert.Equal(t, before, readFile(t, path), "file with a foreign marker changed")
-}
-
 func TestSyncDoesNotModifyHardLinkedFile(t *testing.T) {
-	root := t.TempDir()
-	target := filepath.Join(root, "go.mod")
-	link := filepath.Join(root, "CLAUDE.md")
+	dir := t.TempDir()
+	target := filepath.Join(dir, "go.mod")
+	link := filepath.Join(dir, "NOTES.md")
 	original := []byte("module example.test/project\n")
 	writeFile(t, target, original)
 	if err := os.Link(target, link); err != nil {
 		t.Skipf("cannot create hard link in this environment: %v", err)
 	}
 
-	changed, err := harness.Claude().Sync(root, "run the linter")
+	_, changed, err := syncLocal(t, dir, "run the linter")
 	require.NoError(t, err)
 	require.True(t, changed)
-
 	assert.Equal(t, original, readFile(t, target), "hard-linked file was modified")
-	assert.Contains(t, string(readFile(t, link)), "<!-- gg-lint:claude:start -->")
+	assert.Contains(t, string(readFile(t, link)), startMarker)
 }
 
 func TestSyncRejectsNonRegularTarget(t *testing.T) {
-	root := t.TempDir()
-	require.NoError(t, os.Mkdir(filepath.Join(root, "CLAUDE.md"), 0o755))
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "NOTES.md"), 0o755))
 
-	_, err := harness.Claude().Sync(root, "run the linter")
-	require.ErrorIs(t, err, harness.ErrNotRegularFile)
+	_, _, err := syncLocal(t, dir, "run the linter")
+	require.ErrorIs(t, err, ErrNotRegularFile)
 }
 
 func TestSyncPreservesModeAndLeavesNoTemporaryFiles(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits are emulated on Windows")
 	}
-	root := t.TempDir()
-	path := filepath.Join(root, "CLAUDE.md")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "NOTES.md")
 	writeFile(t, path, []byte("# Notes\n"))
 	require.NoError(t, os.Chmod(path, 0o600))
 
-	changed, err := harness.Claude().Sync(root, "run the linter")
+	_, changed, err := syncLocal(t, dir, "run the linter")
 	require.NoError(t, err)
 	require.True(t, changed)
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
-
-	entries, err := os.ReadDir(root)
+	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	assert.Equal(t, "CLAUDE.md", entries[0].Name())
+	assert.Equal(t, "NOTES.md", entries[0].Name())
 }
 
-func TestUserDir(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home) // os.UserHomeDir uses USERPROFILE on Windows
+func TestBaseResolvers(t *testing.T) {
+	home := isolateHome(t)
 	override := t.TempDir()
 	tests := map[string]struct {
-		h        harness.Harness
+		resolve  func() (string, error)
 		env, val string
 		want     string
 	}{
-		"claude default":           {h: harness.Claude(), env: "CLAUDE_CONFIG_DIR", want: filepath.Join(home, ".claude")},
-		"claude absolute override": {h: harness.Claude(), env: "CLAUDE_CONFIG_DIR", val: override, want: override},
-		"claude relative ignored":  {h: harness.Claude(), env: "CLAUDE_CONFIG_DIR", val: "rel", want: filepath.Join(home, ".claude")},
-		"codex default":            {h: harness.Codex(), env: "CODEX_HOME", want: filepath.Join(home, ".codex")},
-		"codex absolute override":  {h: harness.Codex(), env: "CODEX_HOME", val: override, want: override},
+		"home":                 {resolve: inHome(".tool"), want: filepath.Join(home, ".tool")},
+		"env default":          {resolve: inEnvOrHome("TOOL_HOME", ".tool"), env: "TOOL_HOME", want: filepath.Join(home, ".tool")},
+		"env absolute":         {resolve: inEnvOrHome("TOOL_HOME", ".tool"), env: "TOOL_HOME", val: override, want: override},
+		"env relative ignored": {resolve: inEnvOrHome("TOOL_HOME", ".tool"), env: "TOOL_HOME", val: "rel", want: filepath.Join(home, ".tool")},
+		"xdg default":          {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", want: filepath.Join(home, ".config", "tool")},
+		"xdg absolute":         {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", val: override, want: filepath.Join(override, "tool")},
+		"xdg relative ignored": {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", val: "rel", want: filepath.Join(home, ".config", "tool")},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv(tc.env, tc.val)
-			got, err := tc.h.UserDir()
+			if tc.env != "" {
+				t.Setenv(tc.env, tc.val)
+			}
+			got, err := tc.resolve()
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})

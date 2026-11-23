@@ -17,6 +17,8 @@ func TestSyncInstructions_UsageErrors(t *testing.T) {
 	}
 	for name, args := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			t.Setenv("HOME", t.TempDir())
 			stdout, stderr, code := runCLI(t, newFakeCatalog(t), args...)
 			assert.Equal(t, 2, code)
 			assert.Empty(t, stdout)
@@ -43,7 +45,7 @@ func TestSyncInstructions_User(t *testing.T) {
 			args := append([]string{"sync-instructions", tc.harness}, tc.args...)
 			stdout, stderr, code := runCLI(t, newFakeCatalog(t), args...)
 			require.Equalf(t, 0, code, "stderr: %s", stderr)
-			assert.Contains(t, stdout, "Updated "+tc.harness+" user instructions")
+			assert.Equal(t, "Updated "+tc.harness+" user instructions: "+filepath.Join(userDir, tc.file)+"\n", stdout)
 			assert.FileExists(t, filepath.Join(userDir, tc.file))
 			assert.NoFileExists(t, filepath.Join(cwd, tc.file))
 		})
@@ -70,11 +72,22 @@ func TestSyncInstructions_Local(t *testing.T) {
 
 	stdout, stderr, code := runCLI(t, newFakeCatalog(t), "sync-instructions", "claude", "--local")
 	require.Equalf(t, 0, code, "stderr: %s", stderr)
-	assert.Contains(t, stdout, "Updated claude local instructions")
+	assert.Contains(t, stdout, "Updated claude local instructions: ")
 	assert.FileExists(t, filepath.Join(cwd, "CLAUDE.md"))
 	assert.NoFileExists(t, filepath.Join(userDir, "CLAUDE.md"))
 
 	stdout, _, code = runCLI(t, newFakeCatalog(t), "sync-instructions", "claude", "--local")
 	require.Equal(t, 0, code)
 	assert.Contains(t, stdout, "already current")
+}
+
+func TestSyncInstructions_UserDirectoryMustExist(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	t.Setenv("CLAUDE_CONFIG_DIR", missing)
+	t.Chdir(t.TempDir())
+
+	_, stderr, code := runCLI(t, newFakeCatalog(t), "sync-instructions", "claude")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, missing)
+	assert.NoDirExists(t, missing)
 }
