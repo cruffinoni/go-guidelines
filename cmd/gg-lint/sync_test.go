@@ -14,6 +14,8 @@ func TestSyncInstructions_UsageErrors(t *testing.T) {
 		"unknown harness":              {"sync-instructions", "nope"},
 		"missing harness":              {"sync-instructions"},
 		"local and user are exclusive": {"sync-instructions", "claude", "--local", "--user"},
+		"no user-level file":           {"sync-instructions", "devin"},
+		"no project-level file":        {"sync-instructions", "openclaw", "--local"},
 	}
 	for name, args := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -90,4 +92,10 @@ func TestSyncInstructions_UserDirectoryMustExist(t *testing.T) {
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, missing)
 	assert.NoDirExists(t, missing)
+}
+
+func TestSyncInstructions_UnsupportedScopeSuggestsTheOtherFlag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	_, stderr, _ := runCLI(t, newFakeCatalog(t), "sync-instructions", "devin")
+	assert.Contains(t, stderr, "use --local")
 }

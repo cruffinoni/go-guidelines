@@ -47,7 +47,12 @@ type Harness interface {
 
 // All returns every known harness, in name order.
 func All() []Harness {
-	return []Harness{newClaude(), newCodex()}
+	return []Harness{
+		newAmp(), newBob(), newClaude(), newCline(), newCodex(), newContinue(),
+		newCopilot(), newDevin(), newDsh(), newFactory(), newGemini(), newGoose(),
+		newOpenClaw(), newOpenCode(), newOpenHands(), newPi(), newQwen(), newRoo(),
+		newVibe(),
+	}
 }
 
 // Lookup returns the harness registered under name, if any.

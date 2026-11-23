@@ -128,6 +128,30 @@ func TestSyncEveryHarnessAndScope(t *testing.T) {
 	}
 }
 
+func TestSyncSharedFileHoldsOneBlock(t *testing.T) {
+	byFile := make(map[string][]Harness)
+	for _, h := range All() {
+		if f := h.(instructionFile); f.localFile != "" {
+			byFile[f.localFile] = append(byFile[f.localFile], h)
+		}
+	}
+	shared := 0
+	for file, harnesses := range byFile {
+		if len(harnesses) < 2 {
+			continue
+		}
+		shared++
+		project := t.TempDir()
+		for _, h := range harnesses {
+			_, _, err := h.Sync(Local, project, "run the linter")
+			require.NoError(t, err, h.Name())
+		}
+		content := string(readFile(t, filepath.Join(project, filepath.FromSlash(file))))
+		assert.Equal(t, 1, strings.Count(content, startMarker), "%s: %q", file, content)
+	}
+	assert.NotZero(t, shared, "no harnesses share a local file")
+}
+
 func TestSyncReplacesTheBlockWithoutChangingSurroundingBytes(t *testing.T) {
 	for name, block := range map[string]string{
 		"current": startMarker + "\r\nold\r\n" + endMarker,
