@@ -81,7 +81,8 @@ gg-lint scan --format=json --git-changes
 gg-lint scan --no-config --fail-on=error .   # CI: ignore repository config
 gg-lint rules
 gg-lint rules --format=markdown
-gg-lint sync-instructions --harness claude   # or codex
+gg-lint sync-instructions claude            # or codex; updates ~/.claude/CLAUDE.md
+gg-lint sync-instructions claude --local    # updates ./CLAUDE.md instead
 gg-lint update
 gg-lint update --version v1.2.3-rc.1
 gg-lint version
