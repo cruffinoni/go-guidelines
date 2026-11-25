@@ -34,6 +34,7 @@ func isolateHome(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home) // os.UserHomeDir uses USERPROFILE on Windows
+	t.Setenv("AppData", filepath.Join(home, "AppData"))
 	for _, env := range []string{"XDG_CONFIG_HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"} {
 		t.Setenv(env, "")
 	}
@@ -356,6 +357,10 @@ func TestBaseResolvers(t *testing.T) {
 	override := t.TempDir()
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
+	configDefault := filepath.Join(home, ".config", "tool")
+	if runtime.GOOS == "windows" {
+		configDefault = filepath.Join(home, "AppData", "tool")
+	}
 	tests := map[string]struct {
 		resolve  func() (string, error)
 		env, val string
@@ -368,6 +373,7 @@ func TestBaseResolvers(t *testing.T) {
 		"xdg default":          {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", want: filepath.Join(home, ".config", "tool")},
 		"xdg absolute":         {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", val: override, want: filepath.Join(override, "tool")},
 		"xdg relative ignored": {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", val: "rel", want: filepath.Join(home, ".config", "tool")},
+		"config dir default":   {resolve: inConfigDir("tool"), want: configDefault},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

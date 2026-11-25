@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // homeDir returns ~/rel.
@@ -46,5 +47,22 @@ func inXDGConfig(rel string) func() (string, error) {
 			return filepath.Join(dir, filepath.FromSlash(rel)), nil
 		}
 		return homeDir(".config/" + rel)
+	}
+}
+
+// inConfigDir returns a base resolver for rel under the platform's user
+// config directory: the AppData directory on Windows, and the XDG location
+// elsewhere. macOS keeps ~/.config because the tools gg-lint supports
+// document it there, unlike os.UserConfigDir's Library/Application Support.
+func inConfigDir(rel string) func() (string, error) {
+	if runtime.GOOS != "windows" {
+		return inXDGConfig(rel)
+	}
+	return func() (string, error) {
+		dir, err := os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve user config directory: %w", err)
+		}
+		return filepath.Join(dir, filepath.FromSlash(rel)), nil
 	}
 }

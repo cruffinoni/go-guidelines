@@ -81,8 +81,8 @@ gg-lint scan --format=json --git-changes
 gg-lint scan --no-config --fail-on=error .   # CI: ignore repository config
 gg-lint rules
 gg-lint rules --format=markdown
-gg-lint sync-instructions claude            # updates ~/.claude/CLAUDE.md (see below)
-gg-lint sync-instructions claude --local    # updates ./CLAUDE.md instead
+gg-lint sync-instructions claude             # updates ~/.claude/CLAUDE.md (see below)
+gg-lint sync-instructions claude --local     # updates ./CLAUDE.md instead
 gg-lint update
 gg-lint update --version v1.2.3-rc.1
 gg-lint version
@@ -157,12 +157,15 @@ to run `gg-lint scan --git-changes` before it finishes Go changes. The block sit
 between `<!-- gg-lint:start -->` and `<!-- gg-lint:end -->` lines; everything else
 in the file is left untouched, and rerunning the command is a no-op. Harnesses
 that share a file (for example `AGENTS.md`) share one block. Blocks written by
-v0.0.1 and v0.0.2 (`<!-- gg-lint:claude:start -->`) are migrated in place.
+v0.0.1 and v0.0.2 (`<!-- gg-lint:claude:start -->`) are migrated in place; a file
+holding several such blocks (for example one per harness) is merged into one
+block, keeping the text between them. The harness is a positional argument:
+v0.0.2's `--harness` flag was removed.
 
 `--user` (the default) updates the harness's user-level file; its top-level
-directory (for example `~/.claude`) must already exist. A user-level file
-that is a symlink (as stow or chezmoi create) is followed, and the file it
-points to is updated. A relative `$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` is
+directory (for example `~/.claude`) must already exist. A user-level file or
+directory that is a symlink (as stow or chezmoi create) is followed, and the
+file it points to is updated. A relative `$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` is
 resolved against the current directory. `--local` updates the file at the Git
 repository root, or under the current directory outside a repository, creating
 subdirectories as needed.
@@ -176,7 +179,7 @@ subdirectories as needed.
 | `codex` | `~/.codex/AGENTS.md` (`$CODEX_HOME`) | `AGENTS.md` |
 | `continue` | `~/.continue/rules/gg-lint.md` | `.continue/rules/gg-lint.md` |
 | `copilot` | `~/.copilot/copilot-instructions.md` | `.github/copilot-instructions.md` |
-| `devin` | — | `AGENTS.md` |
+| `devin` | `~/.config/devin/AGENTS.md` ² | `AGENTS.md` |
 | `dsh` | `~/.dsh/AGENTS.md` | `AGENTS.md` |
 | `factory` | `~/.factory/AGENTS.md` | `AGENTS.md` |
 | `gemini` | `~/.gemini/GEMINI.md` | `GEMINI.md` |
@@ -191,6 +194,7 @@ subdirectories as needed.
 
 ¹ `$XDG_CONFIG_HOME` replaces `~/.config` when set. The Continue rule file is
 created with front matter that applies it to every request.
+² On Windows, Devin reads `%APPDATA%\devin\AGENTS.md`.
 
 Not supported, because they take instructions only through configuration or
 per-run templates rather than a Markdown file: Aider, gptme, Mentat, ShellGPT

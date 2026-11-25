@@ -14,7 +14,6 @@ func TestSyncInstructions_UsageErrors(t *testing.T) {
 		"unknown harness":              {"sync-instructions", "nope"},
 		"missing harness":              {"sync-instructions"},
 		"local and user are exclusive": {"sync-instructions", "claude", "--local", "--user"},
-		"no user-level file":           {"sync-instructions", "devin"},
 		"no project-level file":        {"sync-instructions", "openclaw", "--local"},
 	}
 	for name, args := range tests {
@@ -131,6 +130,18 @@ func TestSyncInstructions_UserDirectoryMustExist(t *testing.T) {
 
 func TestSyncInstructions_UnsupportedScopeSuggestsTheOtherFlag(t *testing.T) {
 	t.Chdir(t.TempDir())
-	_, stderr, _ := runCLI(t, newFakeCatalog(t), "sync-instructions", "devin")
-	assert.Contains(t, stderr, "use --local")
+	_, stderr, _ := runCLI(t, newFakeCatalog(t), "sync-instructions", "openclaw", "--local")
+	assert.Contains(t, stderr, "use --user")
+}
+
+func TestSyncInstructions_DevinUser(t *testing.T) {
+	userDir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(userDir, "devin"), 0o755))
+	t.Setenv("XDG_CONFIG_HOME", userDir)
+	t.Setenv("AppData", userDir) // os.UserConfigDir uses AppData on Windows
+	t.Chdir(t.TempDir())
+
+	_, stderr, code := runCLI(t, newFakeCatalog(t), "sync-instructions", "devin")
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	assert.FileExists(t, filepath.Join(userDir, "devin", "AGENTS.md"))
 }
