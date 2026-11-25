@@ -196,15 +196,6 @@ subdirectories as needed.
 created with front matter that applies it to every request.
 ² On Windows, Devin reads `%APPDATA%\devin\AGENTS.md`.
 
-Not supported, because they take instructions only through configuration or
-per-run templates rather than a Markdown file: Aider, gptme, Mentat, ShellGPT
-(sgpt), and SWE-agent.
-
-Also not supported, because their documented instruction locations differ from
-a plain user-level and project-level file that gg-lint can own a block in:
-Amazon Q Developer CLI, Antigravity, Command Code, Contenox, Crush, Cursor,
-FuXi, Hermes Agent, Kilo Code, Kimi Code CLI, Plandex, and Warp.
-
 Run the Go checks with `go test ./...`, `go vet ./...`, and `go build -buildvcs=false ./...`. GitHub Actions also runs native Linux, macOS, and Windows tests.
 
 ## Build from source
