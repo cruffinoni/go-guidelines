@@ -254,6 +254,11 @@ func syncFile(dir, file, header, instructions string) (bool, error) {
 	default:
 		return false, fmt.Errorf("inspect %s: %w", target, statErr)
 	}
+	// An empty or whitespace-only file cannot hold front matter, so treat it
+	// like a missing one when the harness declares a header.
+	if header != "" && len(bytes.TrimSpace(original)) == 0 {
+		original = []byte(header)
+	}
 
 	updated, changed, err := render(original, instructions)
 	if err != nil {

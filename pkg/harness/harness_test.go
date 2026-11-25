@@ -373,6 +373,31 @@ func TestSyncRejectsMalformedMarkersWithoutWriting(t *testing.T) {
 	}
 }
 
+func TestSyncWritesHeaderIntoAnEmptyFile(t *testing.T) {
+	for name, before := range map[string][]byte{
+		"empty":           nil,
+		"whitespace only": []byte(" \n\n"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			require.NoError(t, os.Mkdir(filepath.Join(base, "nested"), 0o755))
+			f := fixture(base)
+			f.header = "---\nname: fixture\n---\n"
+			path := filepath.Join(base, "nested", "USER.md")
+			writeFile(t, path, before)
+
+			_, changed, err := f.Sync(User, "", "run the linter")
+			require.NoError(t, err)
+			assert.True(t, changed)
+			assert.Equal(t, f.header+"\n"+startMarker+"\nrun the linter\n"+endMarker+"\n", string(readFile(t, path)))
+
+			_, changed, err = f.Sync(User, "", "run the linter")
+			require.NoError(t, err)
+			assert.False(t, changed)
+		})
+	}
+}
+
 func TestSyncMergesRepeatedBlocks(t *testing.T) {
 	const legacyStart = "<!-- gg-lint:claude:start -->"
 	const legacyEnd = "<!-- gg-lint:claude:end -->"
