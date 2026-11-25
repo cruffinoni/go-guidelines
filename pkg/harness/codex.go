@@ -1,6 +1,13 @@
 package harness
 
-// Codex returns the harness that keeps a managed block in AGENTS.md.
-func Codex() Harness {
-	return markdownBlock{name: "codex", file: "AGENTS.md"}
+// newCodex returns the OpenAI Codex CLI harness. Its user-level file is
+// AGENTS.md in $CODEX_HOME (default ~/.codex), and its project-level file is
+// ./AGENTS.md.
+func newCodex() Harness {
+	return instructionFile{
+		name:      "codex",
+		userBase:  inEnvOrHome("CODEX_HOME", ".codex"),
+		userFile:  "AGENTS.md",
+		localFile: "AGENTS.md",
+	}
 }

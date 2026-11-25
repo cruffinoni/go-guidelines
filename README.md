@@ -81,7 +81,8 @@ gg-lint scan --format=json --git-changes
 gg-lint scan --no-config --fail-on=error .   # CI: ignore repository config
 gg-lint rules
 gg-lint rules --format=markdown
-gg-lint sync-instructions --harness claude   # or codex
+gg-lint sync-instructions claude             # updates ~/.claude/CLAUDE.md (see below)
+gg-lint sync-instructions claude --local     # updates ./CLAUDE.md instead
 gg-lint update
 gg-lint update --version v1.2.3-rc.1
 gg-lint version
@@ -148,6 +149,52 @@ lintable Go files changed, it reports zero scanned files and exits
 successfully. Files marked `// Code generated … DO NOT EDIT.` are loaded for
 analysis (and type-checked when an active rule needs type information) but
 are never reported on or counted as scanned.
+
+### Coding-agent instructions
+
+`gg-lint sync-instructions <harness>` adds a short block telling the coding agent
+to run `gg-lint scan --git-changes` before it finishes Go changes. The block sits
+between `<!-- gg-lint:start -->` and `<!-- gg-lint:end -->` lines; everything else
+in the file is left untouched, and rerunning the command is a no-op. Harnesses
+that share a file (for example `AGENTS.md`) share one block. Blocks written by
+v0.0.1 and v0.0.2 (`<!-- gg-lint:claude:start -->`) are migrated in place; a file
+holding several such blocks (for example one per harness) is merged into one
+block, keeping the text between them. The harness is a positional argument:
+v0.0.2's `--harness` flag was removed.
+
+`--user` (the default) updates the harness's user-level file; its top-level
+directory (for example `~/.claude`) must already exist. A user-level file or
+directory that is a symlink (as stow or chezmoi create) is followed, and its
+target is updated. A relative `$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` is
+resolved against the current directory. `--local` updates the file at the Git
+repository root, or under the current directory outside a repository, creating
+subdirectories as needed.
+
+| Harness | `--user` (default) | `--local` |
+|---|---|---|
+| `amp` | `~/.config/amp/AGENTS.md` ¹ | `AGENTS.md` |
+| `bob` | `~/.bob/rules/gg-lint.md` | `.bob/rules/gg-lint.md` |
+| `claude` | `~/.claude/CLAUDE.md` (`$CLAUDE_CONFIG_DIR`) | `CLAUDE.md` |
+| `cline` | `~/Documents/Cline/Rules/gg-lint.md` | `.clinerules/gg-lint.md` |
+| `codex` | `~/.codex/AGENTS.md` (`$CODEX_HOME`) | `AGENTS.md` |
+| `continue` | `~/.continue/rules/gg-lint.md` | `.continue/rules/gg-lint.md` |
+| `copilot` | `~/.copilot/copilot-instructions.md` | `.github/copilot-instructions.md` |
+| `devin` | `~/.config/devin/AGENTS.md` ² | `AGENTS.md` |
+| `dsh` | `~/.dsh/AGENTS.md` | `AGENTS.md` |
+| `factory` | `~/.factory/AGENTS.md` | `AGENTS.md` |
+| `gemini` | `~/.gemini/GEMINI.md` | `GEMINI.md` |
+| `goose` | `~/.config/goose/.goosehints` ¹ | `.goosehints` |
+| `openclaw` | `~/.openclaw/workspace/AGENTS.md` | — |
+| `opencode` | `~/.config/opencode/AGENTS.md` ¹ | `AGENTS.md` |
+| `openhands` | `~/.openhands/microagents/gg-lint.md` | `.openhands/microagents/repo.md` |
+| `pi` | `~/.pi/agent/AGENTS.md` | `AGENTS.md` |
+| `qwen` | `~/.qwen/QWEN.md` | `QWEN.md` |
+| `roo` | `~/.roo/rules/gg-lint.md` | `.roo/rules/gg-lint.md` |
+| `vibe` | `~/.vibe/AGENTS.md` | `AGENTS.md` |
+
+¹ `$XDG_CONFIG_HOME` replaces `~/.config` when set. The Continue rule file is
+created with front matter that applies it to every request.
+² On Windows, Devin reads `%APPDATA%\devin\AGENTS.md`.
 
 Run the Go checks with `go test ./...`, `go vet ./...`, and `go build -buildvcs=false ./...`. GitHub Actions also runs native Linux, macOS, and Windows tests.
 

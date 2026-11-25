@@ -75,6 +75,33 @@ func isStringType(t types.Type) bool {
 	return ok && basic.Kind() == types.String
 }
 
+func isStringHelper(pass *lint.Pass, call *ast.CallExpr) bool {
+	if len(call.Args) == 0 {
+		return false
+	}
+	for _, name := range []string{
+		"TrimSpace", "Trim", "TrimLeft", "TrimRight", "TrimPrefix", "TrimSuffix",
+		"ToLower", "ToUpper", "ToTitle", "Replace", "ReplaceAll", "Map",
+		"Repeat", "Clone",
+	} {
+		if stdlibFunc(pass, call, "strings", name) {
+			return true
+		}
+	}
+	return false
+}
+
+func errorStringCall(pass *lint.Pass, call *ast.CallExpr) bool {
+	if len(call.Args) != 0 {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Error" || !isErrorType(pass.TypesInfo.TypeOf(sel.X)) {
+		return false
+	}
+	return isStringType(pass.TypesInfo.TypeOf(call))
+}
+
 type errorSources struct {
 	objects map[types.Object]bool
 	unknown bool
@@ -152,33 +179,6 @@ func stringSources(pass *lint.Pass, expr ast.Expr, state stringState) errorSourc
 		}
 	}
 	return errorSources{}
-}
-
-func isStringHelper(pass *lint.Pass, call *ast.CallExpr) bool {
-	if len(call.Args) == 0 {
-		return false
-	}
-	for _, name := range []string{
-		"TrimSpace", "Trim", "TrimLeft", "TrimRight", "TrimPrefix", "TrimSuffix",
-		"ToLower", "ToUpper", "ToTitle", "Replace", "ReplaceAll", "Map",
-		"Repeat", "Clone",
-	} {
-		if stdlibFunc(pass, call, "strings", name) {
-			return true
-		}
-	}
-	return false
-}
-
-func errorStringCall(pass *lint.Pass, call *ast.CallExpr) bool {
-	if len(call.Args) != 0 {
-		return false
-	}
-	sel, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != "Error" || !isErrorType(pass.TypesInfo.TypeOf(sel.X)) {
-		return false
-	}
-	return isStringType(pass.TypesInfo.TypeOf(call))
 }
 
 func cloneStringState(state stringState) stringState {

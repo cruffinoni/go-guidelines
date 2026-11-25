@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -11,50 +14,94 @@ import (
 )
 
 // instructions is the gg-lint instruction block synced into every harness's
-// project instruction file.
+// instruction file.
 const instructions = "Run `gg-lint scan --git-changes` to check changed Go files before completing Go code changes."
 
-// harnessNames joins the names of every known harness for use in flag
-// usage and error messages.
-func harnessNames() string {
+// harnessNames returns the name of every known harness, in name order.
+func harnessNames() []string {
 	all := harness.All()
 	names := make([]string, 0, len(all))
 	for _, h := range all {
 		names = append(names, h.Name())
 	}
-	return strings.Join(names, ", ")
+	return names
+}
+
+// projectRoot returns the root of the Git repository containing the current
+// directory, so --local writes where the agent reads project instructions,
+// or the current directory itself outside a repository.
+func projectRoot(ctx context.Context) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory: %w", err)
+	}
+	root, err := git.Root(ctx, cwd)
+	switch {
+	case errors.Is(err, git.ErrNotRepository):
+		return cwd, nil
+	case err != nil:
+		return "", fmt.Errorf("resolve project root: %w", err)
+	}
+	return root, nil
 }
 
 // newSyncInstructionsCommand builds the sync-instructions command. It
-// updates only the selected harness's project instruction file; scanning
-// never calls this operation.
+// updates only the named harness's instruction file: the user-level one by
+// default or with --user, or the project-level one with --local.
+// Scanning never calls this operation.
 func newSyncInstructionsCommand() *cobra.Command {
-	var name string
+	var local, user bool
+	names := harnessNames()
 	cmd := &cobra.Command{
-		Use:   "sync-instructions",
-		Short: "Keep a coding-agent harness's project instructions current.",
-		Args:  cobra.NoArgs,
+		Use:   "sync-instructions <harness>",
+		Short: "Keep a coding-agent harness's instructions current.",
+		Long: "Keep a coding-agent harness's instructions current. By default, or with\n" +
+			"--user, the harness's user-level file is updated (for example\n" +
+			"~/.claude/CLAUDE.md); its top-level directory must already exist. With\n" +
+			"--local, the project-level file at the Git repository root is updated (for\n" +
+			"example ./CLAUDE.md), or under the current directory outside a repository.\n" +
+			"Harnesses that share a file share one gg-lint block.\n\n" +
+			"Harnesses: " + strings.Join(names, ", ") + ".",
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: names,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			h, ok := harness.Lookup(name)
+			h, ok := harness.Lookup(args[0])
 			if !ok {
-				return fmt.Errorf("unknown harness %q (want one of %s)", name, harnessNames())
+				return fmt.Errorf("unknown harness %q (run gg-lint sync-instructions --help for the list)", args[0])
 			}
-			root, err := git.Root(cmd.Context(), ".")
-			if err != nil {
-				return fmt.Errorf("resolve project root: %w", err)
+			scope, other := harness.User, "--local"
+			if local {
+				scope, other = harness.Local, "--user"
 			}
-			changed, err := h.Sync(root, instructions)
-			if err != nil {
-				return err
+			// Only --local needs the working directory and Git: user scope
+			// ignores projectDir, and resolving a repository there would fail
+			// on machines without Git.
+			var projectDir string
+			if scope == harness.Local {
+				dir, err := projectRoot(cmd.Context())
+				if err != nil {
+					return err
+				}
+				projectDir = dir
 			}
-			if changed {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Updated %s project instructions.\n", h.Name())
-			} else {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Instructions already current (%s).\n", h.Name())
+			path, changed, err := h.Sync(scope, projectDir, instructions)
+			switch {
+			case errors.Is(err, harness.ErrUnsupportedScope):
+				return fmt.Errorf("%w; use %s", err, other)
+			case errors.Is(err, harness.ErrMissingDirectory):
+				return fmt.Errorf("sync %s %s instructions: %w; create that directory first or use %s", h.Name(), scope, err, other)
+			case err != nil:
+				return fmt.Errorf("sync %s %s instructions: %w", h.Name(), scope, err)
+			case changed:
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Updated %s %s instructions: %s\n", h.Name(), scope, path)
+			default:
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s instructions already current: %s\n", h.Name(), scope, path)
 			}
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&name, "harness", "", fmt.Sprintf("coding-agent harness to update: %s (required)", harnessNames()))
+	cmd.Flags().BoolVar(&local, "local", false, "update the project-level instruction file at the repository root")
+	cmd.Flags().BoolVar(&user, "user", false, "update the harness's user-level instruction file (default)")
+	cmd.MarkFlagsMutuallyExclusive("local", "user")
 	return cmd
 }

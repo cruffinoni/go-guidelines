@@ -11,9 +11,10 @@ var (
 	ErrMalformedMarkers = errors.New("malformed managed instruction markers")
 	ErrSymlinkTarget    = errors.New("target is a symlink")
 	ErrNotRegularFile   = errors.New("target is not a regular file")
+	ErrMissingDirectory = errors.New("instruction directory does not exist")
 )
 
-// FileError attributes a harness failure to one project instruction file.
+// FileError attributes a harness failure to one instruction file.
 // Op preserves the original user-facing verb, such as "refusing to update".
 type FileError struct {
 	File string
