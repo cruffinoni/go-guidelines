@@ -125,6 +125,8 @@ func TestSyncInstructions_UserDirectoryMustExist(t *testing.T) {
 	_, stderr, code := runCLI(t, newFakeCatalog(t), "sync-instructions", "claude")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, missing)
+	assert.Contains(t, stderr, "create that directory first")
+	assert.Contains(t, stderr, "use --local")
 	assert.NoDirExists(t, missing)
 }
 

@@ -57,9 +57,10 @@ func newSyncInstructionsCommand() *cobra.Command {
 		Short: "Keep a coding-agent harness's instructions current.",
 		Long: "Keep a coding-agent harness's instructions current. By default, or with\n" +
 			"--user, the harness's user-level file is updated (for example\n" +
-			"~/.claude/CLAUDE.md); its directory must already exist. With --local, the\n" +
-			"project-level file at the Git repository root is updated (for example\n" +
-			"./CLAUDE.md), or under the current directory outside a repository. Harnesses that share a file share one gg-lint block.\n\n" +
+			"~/.claude/CLAUDE.md); its top-level directory must already exist. With\n" +
+			"--local, the project-level file at the Git repository root is updated (for\n" +
+			"example ./CLAUDE.md), or under the current directory outside a repository.\n" +
+			"Harnesses that share a file share one gg-lint block.\n\n" +
 			"Harnesses: " + strings.Join(names, ", ") + ".",
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: names,
@@ -87,6 +88,8 @@ func newSyncInstructionsCommand() *cobra.Command {
 			switch {
 			case errors.Is(err, harness.ErrUnsupportedScope):
 				return fmt.Errorf("%w; use %s", err, other)
+			case errors.Is(err, harness.ErrMissingDirectory):
+				return fmt.Errorf("sync %s %s instructions: %w; create that directory first or use %s", h.Name(), scope, err, other)
 			case err != nil:
 				return fmt.Errorf("sync %s %s instructions: %w", h.Name(), scope, err)
 			case changed:

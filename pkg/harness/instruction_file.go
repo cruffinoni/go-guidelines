@@ -221,6 +221,9 @@ func syncFile(dir, file, header, instructions string) (bool, error) {
 	target := filepath.Join(dir, filepath.FromSlash(file))
 	root, err := os.OpenRoot(dir)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, &FileError{File: dir, Op: "open", Err: ErrMissingDirectory}
+		}
 		return false, fmt.Errorf("open instruction directory: %w", err)
 	}
 	defer root.Close()
