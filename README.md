@@ -164,8 +164,8 @@ v0.0.2's `--harness` flag was removed.
 
 `--user` (the default) updates the harness's user-level file; its top-level
 directory (for example `~/.claude`) must already exist. A user-level file or
-directory that is a symlink (as stow or chezmoi create) is followed, and the
-file it points to is updated. A relative `$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` is
+directory that is a symlink (as stow or chezmoi create) is followed, and its
+target is updated. A relative `$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` is
 resolved against the current directory. `--local` updates the file at the Git
 repository root, or under the current directory outside a repository, creating
 subdirectories as needed.

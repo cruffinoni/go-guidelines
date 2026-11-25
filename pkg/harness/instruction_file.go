@@ -265,21 +265,60 @@ func syncFile(dir, file, header, instructions string) (bool, error) {
 	return true, nil
 }
 
-// followSymlink returns the directory and file name of the file that the
-// symlink at dir/file points to, or dir and file unchanged when that path
-// is not a symlink.
-func followSymlink(dir, file string) (string, string, error) {
-	link := filepath.Join(dir, filepath.FromSlash(file))
-	info, err := os.Lstat(link)
-	if err != nil || info.Mode()&fs.ModeSymlink == 0 {
-		// A missing file is created by syncFile; other errors surface there.
-		return dir, file, nil
+// resolveUserTarget returns the existing directory and the slash-separated
+// file below it that a user-level write should use, following a symlinked
+// directory below the base or a symlinked final file. Missing directories
+// below the base stay in the file path so syncFile creates them. The base
+// must already exist and is not itself resolved, so the configured path is
+// the one reported.
+func resolveUserTarget(dir, file string) (string, string, error) {
+	info, err := os.Stat(dir)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return "", "", &FileError{File: dir, Op: "open", Err: ErrMissingDirectory}
+	case err != nil:
+		return "", "", &FileError{File: dir, Op: "open", Err: err}
+	case !info.IsDir():
+		return "", "", &FileError{File: dir, Op: "open", Err: fmt.Errorf("not a directory")}
 	}
-	resolved, err := filepath.EvalSymlinks(link)
-	if err != nil {
-		return "", "", &FileError{File: link, Op: "resolve symlink", Err: err}
+	target := filepath.Join(dir, filepath.FromSlash(file))
+
+	// Follow a symlinked final file, as dotfile managers create.
+	if linkInfo, statErr := os.Lstat(target); statErr == nil && linkInfo.Mode()&fs.ModeSymlink != 0 {
+		resolved, err := filepath.EvalSymlinks(target)
+		if err != nil {
+			return "", "", &FileError{File: target, Op: "resolve symlink", Err: err}
+		}
+		return filepath.Dir(resolved), filepath.Base(resolved), nil
 	}
-	return filepath.Dir(resolved), filepath.Base(resolved), nil
+
+	// Follow symlinked directories between the base and the file. The
+	// returned directory exists; missing components stay in the file path so
+	// syncFile creates them below it.
+	current := dir
+	if parent := path.Dir(file); parent != "." {
+		parts := strings.Split(parent, "/")
+		for i, part := range parts {
+			next := filepath.Join(current, part)
+			info, err := os.Lstat(next)
+			switch {
+			case err == nil && info.Mode()&fs.ModeSymlink != 0:
+				resolved, err := filepath.EvalSymlinks(next)
+				if err != nil {
+					return "", "", &FileError{File: next, Op: "resolve symlink", Err: err}
+				}
+				current = resolved
+			case err == nil:
+				current = next
+			case errors.Is(err, fs.ErrNotExist):
+				rel := append(parts[i:], path.Base(file))
+				return current, filepath.ToSlash(filepath.Join(rel...)), nil
+			default:
+				return "", "", &FileError{File: next, Op: "inspect", Err: err}
+			}
+		}
+	}
+	return current, path.Base(file), nil
 }
 
 // Sync rewrites the instruction file for scope so it contains exactly one
@@ -288,21 +327,20 @@ func followSymlink(dir, file string) (string, string, error) {
 // block, and any CRLF line endings, are preserved. A no-op sync performs no
 // write. The scope's directory must exist; missing subdirectories below it
 // are created. Writes replace the directory entry atomically and never
-// escape that directory. A user-level file that is a symlink, as dotfile
-// managers create, is followed and its target file is updated instead; a
-// project-level symlink or any non-regular target is refused.
+// escape that directory. A user-level file or directory that is a symlink,
+// as dotfile managers create, is followed and its target is updated
+// instead; a project-level symlink or any non-regular target is refused.
 func (f instructionFile) Sync(scope Scope, projectDir, instructions string) (string, bool, error) {
 	dir, file, err := f.location(scope, projectDir)
 	if err != nil {
 		return "", false, err
 	}
-	target := filepath.Join(dir, filepath.FromSlash(file))
 	if scope == User {
-		if dir, file, err = followSymlink(dir, file); err != nil {
+		if dir, file, err = resolveUserTarget(dir, file); err != nil {
 			return "", false, err
 		}
-		target = filepath.Join(dir, filepath.FromSlash(file))
 	}
+	target := filepath.Join(dir, filepath.FromSlash(file))
 	changed, err := syncFile(dir, file, f.header, instructions)
 	return target, changed, err
 }

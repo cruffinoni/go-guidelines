@@ -112,7 +112,7 @@ func TestSyncEveryHarnessAndScope(t *testing.T) {
 				base, err := f.userBase()
 				require.NoError(t, err)
 				_, _, err = f.Sync(User, project, "run the linter")
-				require.ErrorIs(t, err, fs.ErrNotExist, "user sync must require an existing base")
+				require.ErrorIs(t, err, ErrMissingDirectory, "user sync must require an existing base")
 				assert.NoDirExists(t, base)
 
 				require.NoError(t, os.MkdirAll(base, 0o755))
@@ -256,6 +256,75 @@ func TestSyncRejectsADanglingUserLevelSymlink(t *testing.T) {
 	fileErr, ok := errors.AsType[*FileError](err)
 	require.True(t, ok, "got %v", err)
 	assert.Equal(t, link, fileErr.File)
+}
+
+func TestSyncFollowsASymlinkedUserSubdirectory(t *testing.T) {
+	base := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(base, "nested")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("cannot create symlink in this environment: %v", err)
+	}
+
+	resolvedOutside, err := filepath.EvalSymlinks(outside)
+	require.NoError(t, err)
+	path, changed, err := fixture(base).Sync(User, "", "run the linter")
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Equal(t, filepath.Join(resolvedOutside, "USER.md"), path)
+	assert.FileExists(t, filepath.Join(outside, "USER.md"))
+	info, err := os.Lstat(link)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&fs.ModeSymlink, "symlink was replaced by a directory")
+
+	_, changed, err = fixture(base).Sync(User, "", "run the linter")
+	require.NoError(t, err)
+	assert.False(t, changed)
+}
+
+func TestSyncFollowsASymlinkedUserBase(t *testing.T) {
+	realBase := t.TempDir()
+	base := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(realBase, base); err != nil {
+		t.Skipf("cannot create symlink in this environment: %v", err)
+	}
+
+	path, changed, err := fixture(base).Sync(User, "", "run the linter")
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Equal(t, filepath.Join(base, "nested", "USER.md"), path)
+	assert.FileExists(t, path)
+	assert.FileExists(t, filepath.Join(realBase, "nested", "USER.md"))
+	info, err := os.Lstat(base)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&fs.ModeSymlink, "base symlink was replaced")
+}
+
+func TestSyncRejectsADanglingUserSubdirectory(t *testing.T) {
+	base := t.TempDir()
+	link := filepath.Join(base, "nested")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), link); err != nil {
+		t.Skipf("cannot create symlink in this environment: %v", err)
+	}
+
+	_, _, err := fixture(base).Sync(User, "", "run the linter")
+	fileErr, ok := errors.AsType[*FileError](err)
+	require.True(t, ok, "got %v", err)
+	assert.Equal(t, link, fileErr.File)
+}
+
+func TestSyncDoesNotFollowProjectLevelDirectorySymlink(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "subdir")); err != nil {
+		t.Skipf("cannot create symlink in this environment: %v", err)
+	}
+	f := fixture("")
+	f.localFile = "subdir/NOTES.md"
+
+	_, _, err := f.Sync(Local, dir, "run the linter")
+	require.Error(t, err)
+	assert.NoFileExists(t, filepath.Join(outside, "NOTES.md"))
 }
 
 func TestSyncReportsAWriteFailureWithoutLeavingAFile(t *testing.T) {
