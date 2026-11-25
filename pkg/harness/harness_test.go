@@ -282,7 +282,6 @@ func TestSyncRejectsMalformedMarkersWithoutWriting(t *testing.T) {
 		"unmatched start":        startMarker + "\nuser content",
 		"unmatched end":          endMarker + "\n",
 		"reversed":               endMarker + "\n" + startMarker,
-		"two blocks":             startMarker + "\n" + endMarker + "\n" + legacyStart + "\n" + legacyEnd,
 		"current and legacy mix": startMarker + "\nold\n" + legacyEnd,
 		"two legacy harnesses":   legacyStart + "\nold\n<!-- gg-lint:codex:end -->",
 		"inline markers":         "prefix " + startMarker + "\nold\n" + endMarker + " suffix",
@@ -301,6 +300,68 @@ func TestSyncRejectsMalformedMarkersWithoutWriting(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, path, fileErr.File)
 			assert.Equal(t, before, readFile(t, path), "malformed file changed")
+		})
+	}
+}
+
+func TestSyncMergesRepeatedBlocks(t *testing.T) {
+	const legacyStart = "<!-- gg-lint:claude:start -->"
+	const legacyEnd = "<!-- gg-lint:claude:end -->"
+	tests := map[string]struct {
+		blocks []string
+		gaps   []string
+	}{
+		"two legacy blocks": {
+			blocks: []string{legacyStart + "\nold\n" + legacyEnd, legacyStart + "\nolder\n" + legacyEnd},
+			gaps:   []string{"keep me"},
+		},
+		"current then legacy": {
+			blocks: []string{startMarker + "\nold\n" + endMarker, legacyStart + "\nolder\n" + legacyEnd},
+			gaps:   []string{"keep me"},
+		},
+		"three blocks": {
+			blocks: []string{
+				legacyStart + "\n1\n" + legacyEnd,
+				startMarker + "\n2\n" + endMarker,
+				legacyStart + "\n3\n" + legacyEnd,
+			},
+			gaps: []string{"first gap", "second gap"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "NOTES.md")
+			var content strings.Builder
+			for i, block := range tc.blocks {
+				if i > 0 {
+					content.WriteString("\n" + tc.gaps[i-1] + "\n")
+				}
+				content.WriteString(block)
+			}
+			writeFile(t, path, []byte("head\n"+content.String()+"\ntail\n"))
+
+			_, changed, err := syncLocal(t, dir, "run the linter")
+			require.NoError(t, err)
+			assert.True(t, changed)
+
+			got := string(readFile(t, path))
+			assert.Equal(t, 1, strings.Count(got, startMarker), "managed blocks in %q", got)
+			assert.Equal(t, 1, strings.Count(got, endMarker), "managed block ends in %q", got)
+			assert.NotContains(t, got, legacyStart)
+			assert.NotContains(t, got, legacyEnd)
+			assert.Contains(t, got, startMarker+"\nrun the linter\n"+endMarker)
+			assert.True(t, strings.HasPrefix(got, "head\n"+startMarker+"\n"), "block not at the first position: %q", got)
+			for _, gap := range tc.gaps {
+				assert.Contains(t, got, gap, "inter-block content dropped")
+			}
+			assert.Contains(t, got, "\ntail\n")
+
+			before := readFile(t, path)
+			_, changed, err = syncLocal(t, dir, "run the linter")
+			require.NoError(t, err)
+			assert.False(t, changed)
+			assert.Equal(t, before, readFile(t, path))
 		})
 	}
 }

@@ -75,10 +75,49 @@ func markerIsStandaloneLine(source []byte, start, end int) bool {
 	return end == len(source) || source[end] == '\r' || source[end] == '\n'
 }
 
+// blockSpan is the byte range of one managed block, from its start marker
+// through its end marker.
+type blockSpan struct {
+	start int
+	end   int
+}
+
+// parseBlocks returns the spans of the managed blocks in text, in document
+// order. It rejects malformed markers: an unmatched one, a start and end of
+// different forms, inline markers, or nesting.
+func parseBlocks(original []byte, text string, matches [][]int) ([]blockSpan, error) {
+	if len(matches)%2 != 0 {
+		return nil, fmt.Errorf("%w: found %d markers; want complete start/end pairs", ErrMalformedMarkers, len(matches))
+	}
+	// Submatch 1 is the legacy harness name, submatch 2 is start or end.
+	kind := func(m []int) string { return text[m[4]:m[5]] }
+	legacyName := func(m []int) string {
+		if m[2] < 0 {
+			return ""
+		}
+		return text[m[2]:m[3]]
+	}
+	spans := make([]blockSpan, 0, len(matches)/2)
+	for i := 0; i < len(matches); i += 2 {
+		start, end := matches[i], matches[i+1]
+		switch {
+		case kind(start) != "start" || kind(end) != "end":
+			return nil, fmt.Errorf("%w: %q must be followed by %q, found %q", ErrMalformedMarkers, text[start[0]:start[1]], endMarker, text[end[0]:end[1]])
+		case legacyName(start) != legacyName(end):
+			return nil, fmt.Errorf("%w: start %q and end %q do not match", ErrMalformedMarkers, text[start[0]:start[1]], text[end[0]:end[1]])
+		case !markerIsStandaloneLine(original, start[0], start[1]) || !markerIsStandaloneLine(original, end[0], end[1]):
+			return nil, fmt.Errorf("%w: each marker must occupy its own line", ErrMalformedMarkers)
+		}
+		spans = append(spans, blockSpan{start: start[0], end: end[1]})
+	}
+	return spans, nil
+}
+
 // render returns original with exactly one managed block holding
-// instructions, replacing an existing block (current or legacy markers) or
-// appending one. It rejects malformed markers: duplicated, unmatched,
-// reversed, inline, or a start and end of different forms.
+// instructions, replacing every existing block (current or legacy markers)
+// with one at the first block's position, keeping the text between blocks,
+// or appending a block when there is none. It rejects malformed markers; see
+// parseBlocks.
 func render(original []byte, instructions string) ([]byte, bool, error) {
 	text := string(original)
 	newline := "\n"
@@ -101,31 +140,18 @@ func render(original []byte, instructions string) ([]byte, bool, error) {
 		return updated, true, nil
 	}
 
-	if len(matches) != 2 {
-		return nil, false, fmt.Errorf("%w: want no markers or one %q and one %q", ErrMalformedMarkers, startMarker, endMarker)
-	}
-	start, end := matches[0], matches[1]
-	// Submatch 1 is the legacy harness name, submatch 2 is start or end.
-	kind := func(m []int) string { return text[m[4]:m[5]] }
-	legacyName := func(m []int) string {
-		if m[2] < 0 {
-			return ""
-		}
-		return text[m[2]:m[3]]
-	}
-	switch {
-	case kind(start) != "start" || kind(end) != "end":
-		return nil, false, fmt.Errorf("%w: want one start marker followed by one end marker", ErrMalformedMarkers)
-	case legacyName(start) != legacyName(end):
-		return nil, false, fmt.Errorf("%w: start %q and end %q do not match", ErrMalformedMarkers, text[start[0]:start[1]], text[end[0]:end[1]])
-	case !markerIsStandaloneLine(original, start[0], start[1]) || !markerIsStandaloneLine(original, end[0], end[1]):
-		return nil, false, fmt.Errorf("%w: each marker must occupy its own line", ErrMalformedMarkers)
+	spans, err := parseBlocks(original, text, matches)
+	if err != nil {
+		return nil, false, err
 	}
 
-	updated := make([]byte, 0, len(original)-(end[1]-start[0])+len(block))
-	updated = append(updated, original[:start[0]]...)
+	updated := make([]byte, 0, len(original)+len(block))
+	updated = append(updated, original[:spans[0].start]...)
 	updated = append(updated, block...)
-	updated = append(updated, original[end[1]:]...)
+	for i := 1; i < len(spans); i++ {
+		updated = append(updated, original[spans[i-1].end:spans[i].start]...)
+	}
+	updated = append(updated, original[spans[len(spans)-1].end:]...)
 	if bytes.Equal(updated, original) {
 		return original, false, nil
 	}
