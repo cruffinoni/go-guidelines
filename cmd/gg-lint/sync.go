@@ -72,9 +72,16 @@ func newSyncInstructionsCommand() *cobra.Command {
 			if local {
 				scope, other = harness.Local, "--user"
 			}
-			projectDir, err := projectRoot(cmd.Context())
-			if err != nil {
-				return err
+			// Only --local needs the working directory and Git: user scope
+			// ignores projectDir, and resolving a repository there would fail
+			// on machines without Git.
+			var projectDir string
+			if scope == harness.Local {
+				dir, err := projectRoot(cmd.Context())
+				if err != nil {
+					return err
+				}
+				projectDir = dir
 			}
 			path, changed, err := h.Sync(scope, projectDir, instructions)
 			switch {

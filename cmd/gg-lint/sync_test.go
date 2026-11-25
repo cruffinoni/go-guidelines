@@ -67,6 +67,28 @@ func TestSyncInstructions_UserFallsBackToHome(t *testing.T) {
 	assert.FileExists(t, filepath.Join(home, ".codex", "AGENTS.md"))
 }
 
+func TestSyncInstructions_UserDoesNotRequireGit(t *testing.T) {
+	userDir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", userDir)
+	t.Setenv("PATH", t.TempDir()) // no git anywhere
+	t.Chdir(t.TempDir())
+
+	_, stderr, code := runCLI(t, newFakeCatalog(t), "sync-instructions", "claude")
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	assert.FileExists(t, filepath.Join(userDir, "CLAUDE.md"))
+}
+
+func TestSyncInstructions_LocalReportsMissingGit(t *testing.T) {
+	root := initGitModule(t) // git runs before PATH is cleared
+	t.Setenv("PATH", t.TempDir())
+	t.Chdir(root)
+
+	_, stderr, code := runCLI(t, newFakeCatalog(t), "sync-instructions", "claude", "--local")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "git")
+	assert.NoFileExists(t, filepath.Join(root, "CLAUDE.md"))
+}
+
 func TestSyncInstructions_Local(t *testing.T) {
 	userDir, cwd := t.TempDir(), t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", userDir)
