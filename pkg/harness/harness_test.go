@@ -221,6 +221,42 @@ func TestSyncRefusesASymlinkTarget(t *testing.T) {
 	assert.Equal(t, "keep these bytes\n", string(readFile(t, outside)), "external target changed")
 }
 
+func TestSyncFollowsAUserLevelSymlink(t *testing.T) {
+	base := t.TempDir()
+	dotfile := filepath.Join(t.TempDir(), "USER.md")
+	writeFile(t, dotfile, []byte("# Mine\n"))
+	require.NoError(t, os.Mkdir(filepath.Join(base, "nested"), 0o755))
+	link := filepath.Join(base, "nested", "USER.md")
+	if err := os.Symlink(dotfile, link); err != nil {
+		t.Skipf("cannot create symlink in this environment: %v", err)
+	}
+
+	path, changed, err := fixture(base).Sync(User, "", "run the linter")
+	require.NoError(t, err)
+	assert.True(t, changed)
+	wantPath, err := filepath.EvalSymlinks(dotfile)
+	require.NoError(t, err)
+	assert.Equal(t, wantPath, path)
+	assert.Equal(t, "# Mine\n\n"+startMarker+"\nrun the linter\n"+endMarker+"\n", string(readFile(t, dotfile)))
+	info, err := os.Lstat(link)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&fs.ModeSymlink, "symlink was replaced by a regular file")
+}
+
+func TestSyncRejectsADanglingUserLevelSymlink(t *testing.T) {
+	base := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(base, "nested"), 0o755))
+	link := filepath.Join(base, "nested", "USER.md")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "missing.md"), link); err != nil {
+		t.Skipf("cannot create symlink in this environment: %v", err)
+	}
+
+	_, _, err := fixture(base).Sync(User, "", "run the linter")
+	fileErr, ok := errors.AsType[*FileError](err)
+	require.True(t, ok, "got %v", err)
+	assert.Equal(t, link, fileErr.File)
+}
+
 func TestSyncReportsAWriteFailureWithoutLeavingAFile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission bits do not block writes on Windows")
@@ -318,6 +354,8 @@ func TestSyncPreservesModeAndLeavesNoTemporaryFiles(t *testing.T) {
 func TestBaseResolvers(t *testing.T) {
 	home := isolateHome(t)
 	override := t.TempDir()
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
 	tests := map[string]struct {
 		resolve  func() (string, error)
 		env, val string
@@ -326,7 +364,7 @@ func TestBaseResolvers(t *testing.T) {
 		"home":                 {resolve: inHome(".tool"), want: filepath.Join(home, ".tool")},
 		"env default":          {resolve: inEnvOrHome("TOOL_HOME", ".tool"), env: "TOOL_HOME", want: filepath.Join(home, ".tool")},
 		"env absolute":         {resolve: inEnvOrHome("TOOL_HOME", ".tool"), env: "TOOL_HOME", val: override, want: override},
-		"env relative ignored": {resolve: inEnvOrHome("TOOL_HOME", ".tool"), env: "TOOL_HOME", val: "rel", want: filepath.Join(home, ".tool")},
+		"env relative":         {resolve: inEnvOrHome("TOOL_HOME", ".tool"), env: "TOOL_HOME", val: "rel", want: filepath.Join(cwd, "rel")},
 		"xdg default":          {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", want: filepath.Join(home, ".config", "tool")},
 		"xdg absolute":         {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", val: override, want: filepath.Join(override, "tool")},
 		"xdg relative ignored": {resolve: inXDGConfig("tool"), env: "XDG_CONFIG_HOME", val: "rel", want: filepath.Join(home, ".config", "tool")},

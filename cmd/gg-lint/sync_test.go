@@ -83,6 +83,19 @@ func TestSyncInstructions_Local(t *testing.T) {
 	assert.Contains(t, stdout, "already current")
 }
 
+func TestSyncInstructions_LocalUsesTheRepositoryRoot(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	root := initGitModule(t)
+	sub := filepath.Join(root, "pkg", "foo")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	t.Chdir(sub)
+
+	_, stderr, code := runCLI(t, newFakeCatalog(t), "sync-instructions", "claude", "--local")
+	require.Equalf(t, 0, code, "stderr: %s", stderr)
+	assert.FileExists(t, filepath.Join(root, "CLAUDE.md"))
+	assert.NoFileExists(t, filepath.Join(sub, "CLAUDE.md"))
+}
+
 func TestSyncInstructions_UserDirectoryMustExist(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	t.Setenv("CLAUDE_CONFIG_DIR", missing)

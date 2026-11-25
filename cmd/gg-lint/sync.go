@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cruffinoni/go-guidelines/pkg/git"
 	"github.com/cruffinoni/go-guidelines/pkg/harness"
 )
 
@@ -25,9 +27,27 @@ func harnessNames() []string {
 	return names
 }
 
+// projectRoot returns the root of the Git repository containing the current
+// directory, so --local writes where the agent reads project instructions,
+// or the current directory itself outside a repository.
+func projectRoot(ctx context.Context) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory: %w", err)
+	}
+	root, err := git.Root(ctx, cwd)
+	switch {
+	case errors.Is(err, git.ErrNotRepository):
+		return cwd, nil
+	case err != nil:
+		return "", fmt.Errorf("resolve project root: %w", err)
+	}
+	return root, nil
+}
+
 // newSyncInstructionsCommand builds the sync-instructions command. It
 // updates only the named harness's instruction file: the user-level one by
-// default or with --user, or the one in the current directory with --local.
+// default or with --user, or the project-level one with --local.
 // Scanning never calls this operation.
 func newSyncInstructionsCommand() *cobra.Command {
 	var local, user bool
@@ -38,8 +58,8 @@ func newSyncInstructionsCommand() *cobra.Command {
 		Long: "Keep a coding-agent harness's instructions current. By default, or with\n" +
 			"--user, the harness's user-level file is updated (for example\n" +
 			"~/.claude/CLAUDE.md); its directory must already exist. With --local, the\n" +
-			"project-level file under the current directory is updated (for example\n" +
-			"./CLAUDE.md). Harnesses that share a file share one gg-lint block.\n\n" +
+			"project-level file at the Git repository root is updated (for example\n" +
+			"./CLAUDE.md), or under the current directory outside a repository. Harnesses that share a file share one gg-lint block.\n\n" +
 			"Harnesses: " + strings.Join(names, ", ") + ".",
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: names,
@@ -52,11 +72,11 @@ func newSyncInstructionsCommand() *cobra.Command {
 			if local {
 				scope, other = harness.Local, "--user"
 			}
-			cwd, err := os.Getwd()
+			projectDir, err := projectRoot(cmd.Context())
 			if err != nil {
-				return fmt.Errorf("get working directory: %w", err)
+				return err
 			}
-			path, changed, err := h.Sync(scope, cwd, instructions)
+			path, changed, err := h.Sync(scope, projectDir, instructions)
 			switch {
 			case errors.Is(err, harness.ErrUnsupportedScope):
 				return fmt.Errorf("%w; use %s", err, other)
@@ -70,7 +90,7 @@ func newSyncInstructionsCommand() *cobra.Command {
 			return err
 		},
 	}
-	cmd.Flags().BoolVar(&local, "local", false, "update the project-level instruction file under the current directory")
+	cmd.Flags().BoolVar(&local, "local", false, "update the project-level instruction file at the repository root")
 	cmd.Flags().BoolVar(&user, "user", false, "update the harness's user-level instruction file (default)")
 	cmd.MarkFlagsMutuallyExclusive("local", "user")
 	return cmd

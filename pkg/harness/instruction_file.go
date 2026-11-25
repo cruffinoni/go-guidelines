@@ -239,19 +239,44 @@ func syncFile(dir, file, header, instructions string) (bool, error) {
 	return true, nil
 }
 
+// followSymlink returns the directory and file name of the file that the
+// symlink at dir/file points to, or dir and file unchanged when that path
+// is not a symlink.
+func followSymlink(dir, file string) (string, string, error) {
+	link := filepath.Join(dir, filepath.FromSlash(file))
+	info, err := os.Lstat(link)
+	if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+		// A missing file is created by syncFile; other errors surface there.
+		return dir, file, nil
+	}
+	resolved, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		return "", "", &FileError{File: link, Op: "resolve symlink", Err: err}
+	}
+	return filepath.Dir(resolved), filepath.Base(resolved), nil
+}
+
 // Sync rewrites the instruction file for scope so it contains exactly one
 // managed block holding instructions, replacing an existing block in place
 // or appending one, and returns the file's path. Every byte outside the
 // block, and any CRLF line endings, are preserved. A no-op sync performs no
 // write. The scope's directory must exist; missing subdirectories below it
 // are created. Writes replace the directory entry atomically and never
-// escape that directory; a symlink or other non-regular target is refused.
+// escape that directory. A user-level file that is a symlink, as dotfile
+// managers create, is followed and its target file is updated instead; a
+// project-level symlink or any non-regular target is refused.
 func (f instructionFile) Sync(scope Scope, projectDir, instructions string) (string, bool, error) {
 	dir, file, err := f.location(scope, projectDir)
 	if err != nil {
 		return "", false, err
 	}
 	target := filepath.Join(dir, filepath.FromSlash(file))
+	if scope == User {
+		if dir, file, err = followSymlink(dir, file); err != nil {
+			return "", false, err
+		}
+		target = filepath.Join(dir, filepath.FromSlash(file))
+	}
 	changed, err := syncFile(dir, file, f.header, instructions)
 	return target, changed, err
 }

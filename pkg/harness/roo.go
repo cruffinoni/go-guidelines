@@ -1,8 +1,8 @@
 package harness
 
 // newRoo returns the Roo Code harness. Its user-level file is
-// ~/.roo/rules/gg-lint.md, and its project-level file is ./.roo/rules/gg-
-// lint.md.
+// ~/.roo/rules/gg-lint.md, and its project-level file is
+// ./.roo/rules/gg-lint.md.
 func newRoo() Harness {
 	return instructionFile{
 		name:      "roo",
