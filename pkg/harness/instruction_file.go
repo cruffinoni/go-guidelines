@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -66,13 +67,14 @@ func (f instructionFile) location(scope Scope, projectDir string) (dir, file str
 }
 
 // markerIsStandaloneLine reports whether source[start:end] occupies its own
-// line: preceded by a newline or the start of source, and followed by a
-// carriage return, a newline, or the end of source.
+// line: preceded by LF or the start of source, and followed by LF, CRLF, or
+// the end of source.
 func markerIsStandaloneLine(source []byte, start, end int) bool {
 	if start > 0 && source[start-1] != '\n' {
 		return false
 	}
-	return end == len(source) || source[end] == '\r' || source[end] == '\n'
+	return end == len(source) || source[end] == '\n' ||
+		(source[end] == '\r' && end+1 < len(source) && source[end+1] == '\n')
 }
 
 // blockSpan is the byte range of one managed block, from its start marker
@@ -158,11 +160,40 @@ func render(original []byte, instructions string) ([]byte, bool, error) {
 	return updated, true, nil
 }
 
-// writeAtomic replaces file in root with data using a temporary file and a
-// rename, preserving mode. Renaming replaces the directory entry rather
-// than truncating the existing inode, so hard links to the old file are
-// left untouched and a crash leaves either the old or the new content.
-func writeAtomic(root *os.Root, file string, data []byte, mode fs.FileMode) error {
+// removeBlocks strips each managed block, including its end marker's line
+// ending. It keeps all bytes before, between, and after the blocks.
+func removeBlocks(original []byte) ([]byte, bool, error) {
+	text := string(original)
+	matches := markerPattern.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return original, false, nil
+	}
+	spans, err := parseBlocks(original, text, matches)
+	if err != nil {
+		return nil, false, err
+	}
+
+	updated := make([]byte, 0, len(original))
+	var end int
+	for _, span := range spans {
+		updated = append(updated, original[end:span.start]...)
+		end = span.end
+		if end < len(original) && original[end] == '\r' {
+			end++
+		}
+		if end < len(original) && original[end] == '\n' {
+			end++
+		}
+	}
+	updated = append(updated, original[end:]...)
+	return updated, true, nil
+}
+
+// writeAtomic replaces file in root using a temporary file and a rename.
+// It preserves mode bits and, on Linux, ownership and POSIX access ACLs.
+// Renaming leaves hard links to the old file untouched; a crash leaves
+// either the old or the new content.
+func writeAtomic(root *os.Root, file string, data []byte, source *os.File, mode fs.FileMode) error {
 	var (
 		tmp     *os.File
 		tmpName string
@@ -173,7 +204,7 @@ func writeAtomic(root *os.Root, file string, data []byte, mode fs.FileMode) erro
 			return fmt.Errorf("generate temporary name: %w", err)
 		}
 		name := path.Join(path.Dir(file), "."+path.Base(file)+".tmp-"+hex.EncodeToString(suffix[:]))
-		f, openErr := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+		f, openErr := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if errors.Is(openErr, fs.ErrExist) {
 			continue
 		}
@@ -191,11 +222,19 @@ func writeAtomic(root *os.Root, file string, data []byte, mode fs.FileMode) erro
 		_ = root.Remove(tmpName)
 	}()
 
+	if source != nil {
+		if err := preserveFileAccess(source, tmp, mode); err != nil {
+			return fmt.Errorf("preserve file access: %w", err)
+		}
+		// Release the source handle before renaming over its directory entry.
+		if err := source.Close(); err != nil {
+			return fmt.Errorf("close original file: %w", err)
+		}
+	} else if err := tmp.Chmod(mode); err != nil {
+		return fmt.Errorf("set mode: %w", err)
+	}
 	if _, err := tmp.Write(data); err != nil {
 		return fmt.Errorf("write temporary file: %w", err)
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		return fmt.Errorf("preserve mode: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		return fmt.Errorf("sync temporary file: %w", err)
@@ -215,26 +254,32 @@ func writeAtomic(root *os.Root, file string, data []byte, mode fs.FileMode) erro
 	return nil
 }
 
-// syncFile implements [instructionFile.Sync] for the slash-separated file
-// under dir.
-func syncFile(dir, file, header, instructions string) (bool, error) {
+// updateFile transforms the slash-separated file under dir. When create is
+// false, a missing directory or file is a no-op.
+func updateFile(dir, file string, create bool, transform func([]byte) ([]byte, bool, error)) (bool, error) {
 	target := filepath.Join(dir, filepath.FromSlash(file))
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
+			if !create {
+				return false, nil
+			}
 			return false, &FileError{File: dir, Op: "open", Err: ErrMissingDirectory}
 		}
 		return false, fmt.Errorf("open instruction directory: %w", err)
 	}
 	defer root.Close()
-	if parent := path.Dir(file); parent != "." {
+	if parent := path.Dir(file); create && parent != "." {
 		if err := root.MkdirAll(parent, 0o755); err != nil {
 			return false, fmt.Errorf("create %s: %w", filepath.Join(dir, filepath.FromSlash(parent)), err)
 		}
 	}
 
 	mode := fs.FileMode(0o644)
-	var original []byte
+	var (
+		original []byte
+		source   *os.File
+	)
 	info, statErr := root.Lstat(file)
 	switch {
 	case statErr == nil:
@@ -244,30 +289,38 @@ func syncFile(dir, file, header, instructions string) (bool, error) {
 		if !info.Mode().IsRegular() {
 			return false, &FileError{File: target, Op: "refusing to update", Err: ErrNotRegularFile}
 		}
-		mode = info.Mode().Perm()
-		if original, err = root.ReadFile(file); err != nil {
+		source, err = root.Open(file)
+		if err != nil {
+			return false, fmt.Errorf("open %s: %w", target, err)
+		}
+		defer source.Close()
+		opened, err := source.Stat()
+		if err != nil {
+			return false, fmt.Errorf("inspect open file %s: %w", target, err)
+		}
+		if !os.SameFile(info, opened) {
+			return false, fmt.Errorf("instruction file changed while opening %s", target)
+		}
+		mode = opened.Mode().Perm()
+		if original, err = io.ReadAll(source); err != nil {
 			return false, fmt.Errorf("read %s: %w", target, err)
 		}
 	case errors.Is(statErr, fs.ErrNotExist):
-		// No existing file: the block goes below the header, if any.
-		original = []byte(header)
+		if !create {
+			return false, nil
+		}
 	default:
 		return false, fmt.Errorf("inspect %s: %w", target, statErr)
 	}
-	// An empty or whitespace-only file cannot hold front matter, so treat it
-	// like a missing one when the harness declares a header.
-	if header != "" && len(bytes.TrimSpace(original)) == 0 {
-		original = []byte(header)
-	}
 
-	updated, changed, err := render(original, instructions)
+	updated, changed, err := transform(original)
 	if err != nil {
 		return false, &FileError{File: target, Err: err}
 	}
 	if !changed {
 		return false, nil
 	}
-	if err := writeAtomic(root, file, updated, mode); err != nil {
+	if err := writeAtomic(root, file, updated, source, mode); err != nil {
 		return false, &FileError{File: target, Op: "write", Err: err}
 	}
 	return true, nil
@@ -276,7 +329,7 @@ func syncFile(dir, file, header, instructions string) (bool, error) {
 // resolveUserTarget returns the existing directory and the slash-separated
 // file below it that a user-level write should use, following a symlinked
 // directory below the base or a symlinked final file. Missing directories
-// below the base stay in the file path so syncFile creates them. The base
+// below the base stay in the file path so Sync can create them. The base
 // must already exist and is not itself resolved, so the configured path is
 // the one reported.
 func resolveUserTarget(dir, file string) (string, string, error) {
@@ -349,6 +402,59 @@ func (f instructionFile) Sync(scope Scope, projectDir, instructions string) (str
 		}
 	}
 	target := filepath.Join(dir, filepath.FromSlash(file))
-	changed, err := syncFile(dir, file, f.header, instructions)
+	changed, err := updateFile(dir, file, true, func(original []byte) ([]byte, bool, error) {
+		// Add front matter when the file is missing, empty, or whitespace-only.
+		if f.header != "" && len(bytes.TrimSpace(original)) == 0 {
+			original = []byte(f.header)
+		}
+		return render(original, instructions)
+	})
+	return target, changed, err
+}
+
+// checkMissingUserBase distinguishes a missing base directory from a dangling
+// symlink in its path. resolveUserTarget reports both as ErrMissingDirectory
+// for Sync, but Remove only treats the former as a no-op.
+func checkMissingUserBase(dir string) error {
+	for current := dir; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		switch {
+		case err == nil:
+			if info.Mode()&fs.ModeSymlink != 0 {
+				if _, err := os.Stat(current); err != nil {
+					return &FileError{File: current, Op: "resolve symlink", Err: err}
+				}
+			}
+			return nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return &FileError{File: current, Op: "inspect", Err: err}
+		case current == filepath.Dir(current):
+			return nil
+		}
+	}
+}
+
+// Remove strips all managed blocks without creating or deleting the
+// instruction file. It follows the same symlink policy as Sync.
+func (f instructionFile) Remove(scope Scope, projectDir string) (string, bool, error) {
+	dir, file, err := f.location(scope, projectDir)
+	if err != nil {
+		return "", false, err
+	}
+	if scope == User {
+		resolvedDir, resolvedFile, err := resolveUserTarget(dir, file)
+		if errors.Is(err, ErrMissingDirectory) {
+			if err := checkMissingUserBase(dir); err != nil {
+				return "", false, err
+			}
+			return filepath.Join(dir, filepath.FromSlash(file)), false, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		dir, file = resolvedDir, resolvedFile
+	}
+	target := filepath.Join(dir, filepath.FromSlash(file))
+	changed, err := updateFile(dir, file, false, removeBlocks)
 	return target, changed, err
 }

@@ -1,10 +1,10 @@
 // Package harness keeps coding-agent instructions current.
 //
 // Each coding-agent harness (Claude, Codex, Gemini, ...) implements
-// [Harness] to sync a block of gg-lint instructions into its own instruction
-// file, either in a project directory ([Local]) or in the harness's
-// user-level directory ([User]). Adding a harness means adding one file to
-// this package and listing its constructor in [All].
+// [Harness] to sync or remove managed gg-lint instructions in its own
+// instruction file, either in a project directory ([Local]) or at user
+// level ([User]). Adding a harness means adding one file to this package
+// and listing its constructor in [All].
 package harness
 
 import "errors"
@@ -34,8 +34,7 @@ func (s Scope) String() string {
 // Harness is a coding-agent harness whose instructions gg-lint keeps
 // current.
 type Harness interface {
-	// Name identifies the harness, as accepted by [Lookup] and by the
-	// gg-lint sync-instructions command.
+	// Name identifies the harness, as accepted by [Lookup].
 	Name() string
 	// Sync updates the harness's instruction file for scope so it contains
 	// instructions, and returns the file's path and whether it was written.
@@ -43,6 +42,12 @@ type Harness interface {
 	// [User]. It wraps [ErrUnsupportedScope] when the harness has no file
 	// for scope.
 	Sync(scope Scope, projectDir, instructions string) (path string, changed bool, err error)
+	// Remove removes all managed blocks from the instruction file for scope
+	// and returns the file's path and whether it was written. A missing
+	// directory or file, or a file without managed blocks, is a no-op.
+	// projectDir is used only for [Local]. Like Sync, Remove wraps
+	// [ErrUnsupportedScope] when the harness has no file for scope.
+	Remove(scope Scope, projectDir string) (path string, changed bool, err error)
 }
 
 // All returns every known harness, in name order.
