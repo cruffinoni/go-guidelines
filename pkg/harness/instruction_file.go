@@ -158,6 +158,35 @@ func render(original []byte, instructions string) ([]byte, bool, error) {
 	return updated, true, nil
 }
 
+// removeBlocks strips each managed block, including its end marker's line
+// ending. It keeps all bytes before, between, and after the blocks.
+func removeBlocks(original []byte) ([]byte, bool, error) {
+	text := string(original)
+	matches := markerPattern.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return original, false, nil
+	}
+	spans, err := parseBlocks(original, text, matches)
+	if err != nil {
+		return nil, false, err
+	}
+
+	updated := make([]byte, 0, len(original))
+	var end int
+	for _, span := range spans {
+		updated = append(updated, original[end:span.start]...)
+		end = span.end
+		if end < len(original) && original[end] == '\r' {
+			end++
+		}
+		if end < len(original) && original[end] == '\n' {
+			end++
+		}
+	}
+	updated = append(updated, original[end:]...)
+	return updated, true, nil
+}
+
 // writeAtomic replaces file in root with data using a temporary file and a
 // rename, preserving mode. Renaming replaces the directory entry rather
 // than truncating the existing inode, so hard links to the old file are
@@ -215,19 +244,22 @@ func writeAtomic(root *os.Root, file string, data []byte, mode fs.FileMode) erro
 	return nil
 }
 
-// syncFile implements [instructionFile.Sync] for the slash-separated file
-// under dir.
-func syncFile(dir, file, header, instructions string) (bool, error) {
+// updateFile transforms the slash-separated file under dir. When create is
+// false, a missing directory or file is a no-op.
+func updateFile(dir, file string, create bool, transform func([]byte) ([]byte, bool, error)) (bool, error) {
 	target := filepath.Join(dir, filepath.FromSlash(file))
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
+			if !create {
+				return false, nil
+			}
 			return false, &FileError{File: dir, Op: "open", Err: ErrMissingDirectory}
 		}
 		return false, fmt.Errorf("open instruction directory: %w", err)
 	}
 	defer root.Close()
-	if parent := path.Dir(file); parent != "." {
+	if parent := path.Dir(file); create && parent != "." {
 		if err := root.MkdirAll(parent, 0o755); err != nil {
 			return false, fmt.Errorf("create %s: %w", filepath.Join(dir, filepath.FromSlash(parent)), err)
 		}
@@ -249,18 +281,14 @@ func syncFile(dir, file, header, instructions string) (bool, error) {
 			return false, fmt.Errorf("read %s: %w", target, err)
 		}
 	case errors.Is(statErr, fs.ErrNotExist):
-		// No existing file: the block goes below the header, if any.
-		original = []byte(header)
+		if !create {
+			return false, nil
+		}
 	default:
 		return false, fmt.Errorf("inspect %s: %w", target, statErr)
 	}
-	// An empty or whitespace-only file cannot hold front matter, so treat it
-	// like a missing one when the harness declares a header.
-	if header != "" && len(bytes.TrimSpace(original)) == 0 {
-		original = []byte(header)
-	}
 
-	updated, changed, err := render(original, instructions)
+	updated, changed, err := transform(original)
 	if err != nil {
 		return false, &FileError{File: target, Err: err}
 	}
@@ -276,7 +304,7 @@ func syncFile(dir, file, header, instructions string) (bool, error) {
 // resolveUserTarget returns the existing directory and the slash-separated
 // file below it that a user-level write should use, following a symlinked
 // directory below the base or a symlinked final file. Missing directories
-// below the base stay in the file path so syncFile creates them. The base
+// below the base stay in the file path so Sync can create them. The base
 // must already exist and is not itself resolved, so the configured path is
 // the one reported.
 func resolveUserTarget(dir, file string) (string, string, error) {
@@ -349,6 +377,59 @@ func (f instructionFile) Sync(scope Scope, projectDir, instructions string) (str
 		}
 	}
 	target := filepath.Join(dir, filepath.FromSlash(file))
-	changed, err := syncFile(dir, file, f.header, instructions)
+	changed, err := updateFile(dir, file, true, func(original []byte) ([]byte, bool, error) {
+		// Add front matter when the file is missing, empty, or whitespace-only.
+		if f.header != "" && len(bytes.TrimSpace(original)) == 0 {
+			original = []byte(f.header)
+		}
+		return render(original, instructions)
+	})
+	return target, changed, err
+}
+
+// checkMissingUserBase distinguishes a missing base directory from a dangling
+// symlink in its path. resolveUserTarget reports both as ErrMissingDirectory
+// for Sync, but Remove only treats the former as a no-op.
+func checkMissingUserBase(dir string) error {
+	for current := dir; ; current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		switch {
+		case err == nil:
+			if info.Mode()&fs.ModeSymlink != 0 {
+				if _, err := os.Stat(current); err != nil {
+					return &FileError{File: current, Op: "resolve symlink", Err: err}
+				}
+			}
+			return nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return &FileError{File: current, Op: "inspect", Err: err}
+		case current == filepath.Dir(current):
+			return nil
+		}
+	}
+}
+
+// Remove strips all managed blocks without creating or deleting the
+// instruction file. It follows the same symlink policy as Sync.
+func (f instructionFile) Remove(scope Scope, projectDir string) (string, bool, error) {
+	dir, file, err := f.location(scope, projectDir)
+	if err != nil {
+		return "", false, err
+	}
+	if scope == User {
+		resolvedDir, resolvedFile, err := resolveUserTarget(dir, file)
+		if errors.Is(err, ErrMissingDirectory) {
+			if err := checkMissingUserBase(dir); err != nil {
+				return "", false, err
+			}
+			return filepath.Join(dir, filepath.FromSlash(file)), false, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		dir, file = resolvedDir, resolvedFile
+	}
+	target := filepath.Join(dir, filepath.FromSlash(file))
+	changed, err := updateFile(dir, file, false, removeBlocks)
 	return target, changed, err
 }

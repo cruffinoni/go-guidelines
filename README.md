@@ -81,8 +81,10 @@ gg-lint scan --format=json --git-changes
 gg-lint scan --no-config --fail-on=error .   # CI: ignore repository config
 gg-lint rules
 gg-lint rules --format=markdown
-gg-lint sync-instructions claude             # updates ~/.claude/CLAUDE.md (see below)
-gg-lint sync-instructions claude --local     # updates ./CLAUDE.md instead
+gg-lint harness setup claude                # updates ~/.claude/CLAUDE.md (see below)
+gg-lint harness setup claude --local        # updates ./CLAUDE.md instead
+gg-lint harness remove claude               # removes the managed block from ~/.claude/CLAUDE.md
+gg-lint harness remove claude --local       # removes it from ./CLAUDE.md instead
 gg-lint update
 gg-lint update --version v1.2.3-rc.1
 gg-lint version
@@ -152,23 +154,29 @@ are never reported on or counted as scanned.
 
 ### Coding-agent instructions
 
-`gg-lint sync-instructions <harness>` adds a short block telling the coding agent
-to run `gg-lint scan --git-changes` before it finishes Go changes. The block sits
-between `<!-- gg-lint:start -->` and `<!-- gg-lint:end -->` lines; everything else
-in the file is left untouched, and rerunning the command is a no-op. Harnesses
-that share a file (for example `AGENTS.md`) share one block. Blocks written by
-v0.0.1 and v0.0.2 (`<!-- gg-lint:claude:start -->`) are migrated in place; a file
-holding several such blocks (for example one per harness) is merged into one
-block, keeping the text between them. The harness is a positional argument:
-v0.0.2's `--harness` flag was removed.
+`gg-lint harness setup <harness>` adds or updates a short block telling the
+coding agent to run `gg-lint scan --git-changes` before it finishes Go changes.
+The block sits between `<!-- gg-lint:start -->` and `<!-- gg-lint:end -->` lines;
+everything else in the file is left untouched, and rerunning setup is a no-op.
+Harnesses that share a file (for example `AGENTS.md`) share one block. Blocks
+written by v0.0.1 and v0.0.2 (`<!-- gg-lint:claude:start -->`) are migrated in
+place. If a file has several such blocks, setup replaces them with one block
+while keeping the text between them. Pass the harness as a positional argument
+instead of v0.0.2's `--harness` flag. The old `gg-lint sync-instructions <harness>`
+spelling still works but is deprecated.
 
-`--user` (the default) updates the harness's user-level file; its top-level
-directory (for example `~/.claude`) must already exist. A user-level file or
-directory that is a symlink (as stow or chezmoi create) is followed, and its
-target is updated. A relative `$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` is
-resolved against the current directory. `--local` updates the file at the Git
-repository root, or under the current directory outside a repository, creating
-subdirectories as needed.
+`gg-lint harness remove <harness>` removes the managed block, including any
+legacy blocks, without deleting the file or altering other content. This also
+removes the block for any other harness that shares the file. A missing file
+or block is a no-op; removal never creates files or directories.
+
+For both commands, `--user` (the default) selects the harness's user-level
+file. For setup, its top-level directory (for example `~/.claude`) must already
+exist. A user-level file or directory that is a symlink (as stow or chezmoi
+create) is followed, and its target is updated. Relative values for
+`$CLAUDE_CONFIG_DIR` and `$CODEX_HOME` are resolved against the current directory.
+`--local` selects the file at the Git repository root, or under the current
+directory outside a repository. Setup creates subdirectories as needed.
 
 | Harness | `--user` (default) | `--local` |
 |---|---|---|

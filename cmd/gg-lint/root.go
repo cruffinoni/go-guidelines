@@ -47,7 +47,8 @@ func newRootCommand(stdout, stderr io.Writer, cat *catalog.Catalog) *cobra.Comma
 	root.AddCommand(
 		newScanCommand(cat),
 		newRulesCommand(cat),
-		newSyncInstructionsCommand(),
+		newHarnessCommand(),
+		newLegacySyncCommand(),
 		newUpdateCommand(),
 		newVersionCommand(),
 	)
