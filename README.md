@@ -178,6 +178,9 @@ create) is followed, and its target is updated. Relative values for
 `--local` selects the file at the Git repository root, or under the current
 directory outside a repository. Setup creates subdirectories as needed.
 
+Rewriting an existing file preserves its permission bits and, on Linux, its
+owner, group, and POSIX access ACL. Other ACL formats are not preserved.
+
 | Harness | `--user` (default) | `--local` |
 |---|---|---|
 | `amp` | `~/.config/amp/AGENTS.md` ¹ | `AGENTS.md` |

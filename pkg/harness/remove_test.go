@@ -26,8 +26,8 @@ func TestRemoveManagedBlocks(t *testing.T) {
 			after:  "prefix\xff\n\n\nsuffix\x00",
 		},
 		"preserve CRLF and front matter": {
-			before: header + startMarker + "\r\nmanaged\r\n" + endMarker + "\r\n\r\nuser notes\r\n",
-			after:  header + "\r\nuser notes\r\n",
+			before: header + startMarker + "\r\nmanaged\r\n" + endMarker + "\r\n\r\nuser\rnotes\r\n",
+			after:  header + "\r\nuser\rnotes\r\n",
 		},
 		"multiple forms, adjacent blocks, end of file": {
 			before: managedBlock + "\n" + legacyBlock + "\r\nkeep this\r\n" + managedBlock,
@@ -110,15 +110,19 @@ func TestRemoveDoesNotRewriteFilesWithoutBlocks(t *testing.T) {
 
 func TestRemoveRejectsMalformedMarkersWithoutWriting(t *testing.T) {
 	for name, malformed := range map[string]string{
-		"unmatched": startMarker,
-		"mixed":     startMarker + "\n<!-- gg-lint:codex:end -->",
-		"nested":    startMarker + "\n" + managedBlock + "\n" + endMarker,
-		"inline":    "prefix " + startMarker + "\n" + endMarker + " suffix",
+		"unmatched":           startMarker + "\n",
+		"mixed":               startMarker + "\n<!-- gg-lint:codex:end -->\n",
+		"nested":              startMarker + "\n" + managedBlock + "\n" + endMarker + "\n",
+		"inline":              "prefix " + startMarker + "\n" + endMarker + " suffix\n",
+		"bare CR after start": startMarker + "\rmanaged\n" + endMarker + "\n",
+		"bare CR after end":   managedBlock + "\ruser notes\n",
+		"bare CR at EOF":      managedBlock + "\r",
+		"double CR before LF": managedBlock + "\r\r\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			target := filepath.Join(dir, "NOTES.md")
-			before := managedBlock + "\n" + malformed + "\n"
+			before := managedBlock + "\n" + malformed
 			writeFile(t, target, []byte(before))
 
 			got, changed, err := fixture("").Remove(Local, dir)
