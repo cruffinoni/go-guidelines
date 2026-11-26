@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -192,6 +193,21 @@ func TestLegacySyncInstructions(t *testing.T) {
 	assert.FileExists(t, filepath.Join(userDir, "CLAUDE.md"))
 }
 
+func assertHarnessOutputFile(t *testing.T, output, prefix, wantPath string) {
+	t.Helper()
+	reported, ok := strings.CutPrefix(output, prefix)
+	require.Truef(t, ok, "unexpected command output: %q", output)
+	reported, ok = strings.CutSuffix(reported, "\n")
+	require.Truef(t, ok, "missing newline in command output: %q", output)
+
+	// Git may report a different spelling of the same repository root.
+	got, err := os.Stat(reported)
+	require.NoError(t, err)
+	want, err := os.Stat(wantPath)
+	require.NoError(t, err)
+	assert.Truef(t, os.SameFile(got, want), "%q and %q refer to different files", reported, wantPath)
+}
+
 func TestHarnessRemove(t *testing.T) {
 	root := initGitModule(t)
 	nested := filepath.Join(root, "nested")
@@ -220,12 +236,12 @@ func TestHarnessRemove(t *testing.T) {
 
 	stdout, stderr, code = runCLI(t, cat, "harness", "remove", "claude", "--local")
 	require.Equalf(t, 0, code, "stderr: %s", stderr)
-	assert.Equal(t, "Removed claude local instructions: "+localFile+"\n", stdout)
+	assertHarnessOutputFile(t, stdout, "Removed claude local instructions: ", localFile)
 	content, err = os.ReadFile(localFile)
 	require.NoError(t, err)
 	assert.Empty(t, content)
 
 	stdout, stderr, code = runCLI(t, cat, "harness", "remove", "claude", "--local")
 	require.Equalf(t, 0, code, "stderr: %s", stderr)
-	assert.Equal(t, "No managed claude local instructions to remove: "+localFile+"\n", stdout)
+	assertHarnessOutputFile(t, stdout, "No managed claude local instructions to remove: ", localFile)
 }
